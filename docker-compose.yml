@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: aerogard-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aerogard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aerogard_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-aerogard}
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - aerogard_pgdata:/var/lib/postgresql/data
+      - ./scripts/db/init-test-db.sql:/docker-entrypoint-initdb.d/01-init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aerogard} -d ${POSTGRES_DB:-aerogard}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  aerogard_pgdata:

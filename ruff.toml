@@ -1,0 +1,6 @@
+# Lint ml/ and scripts/ with the same rules as the backend.
+extend = "backend/pyproject.toml"
+
+[lint.per-file-ignores]
+# Report prose: long literal strings read better unwrapped.
+"scripts/build_progress_report.py" = ["E501"]
