@@ -57,11 +57,12 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
 .banner { margin: 16px 24px 0; padding: 10px 14px; border-radius: 10px; background: #fff7e0; border: 1px solid #f3dc92; font-size: 14px; }
 
 /* grid */
-.grid { display: grid; gap: 16px; padding: 16px 24px 24px; grid-template-columns: repeat(12, minmax(0, 1fr)); }
+.grid { display: grid; gap: 16px; padding: 16px 24px 24px; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-flow: row dense; }
 .card { background: var(--card); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); min-width: 0; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.today { grid-column: span 7; }
 .hero { grid-column: span 7; }
-.map-card { grid-column: span 5; grid-row: span 2; display: flex; flex-direction: column; }
+.map-card { grid-column: span 5; grid-row: span 3; display: flex; flex-direction: column; }
 .forecast-card { grid-column: span 7; }
 .exposure-card { grid-column: span 7; }
 .risk-card { grid-column: span 5; }
@@ -125,3 +126,43 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
   .profile .check { grid-column: auto; }
   .banner { margin: 12px 16px 0; }
 }
+
+/* today for you */
+.today-body { display: grid; gap: 14px; }
+.today-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.level { padding: 8px 16px; border-radius: 999px; font-weight: 700; color: #fff; font-size: 15px; }
+.level.good { background: var(--good); }
+.level.caution { background: #8aa81f; }
+.level.limit { background: var(--poor); }
+.level.avoid { background: var(--very-poor); }
+.headline { font-size: 18px; font-weight: 600; }
+.windows { display: flex; gap: 10px; flex-wrap: wrap; }
+.win { background: var(--bg); border-radius: 12px; padding: 10px 14px; min-width: 150px; }
+.win .k { font-size: 12px; color: var(--muted); }
+.win .v { font-size: 17px; font-weight: 650; }
+.win.best .v { color: var(--accent); }
+.win.avoid .v { color: var(--danger); }
+.strip { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }
+.strip .h { height: 26px; border-radius: 4px; }
+.strip .h.night { opacity: .35; }
+.strip-labels { display: grid; grid-template-columns: repeat(24, 1fr); font-size: 11px; color: var(--muted); }
+.strip-labels span { grid-column: span 3; }
+.notes { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.notes b { color: var(--ink); font-weight: 600; }
+
+/* map modes */
+.city-controls { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.city-controls input[type=range] { flex: 1; accent-color: var(--accent); }
+.legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -2px; }
+.map-hint { margin: 8px 0 0; }
+.popup-actions { display: grid; gap: 6px; margin-top: 6px; }
+.popup-actions button { font: inherit; font-size: 12px; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: #fff; cursor: pointer; }
+.popup-actions button:hover { border-color: var(--accent); }
+
+/* saved places */
+.places { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.place { display: flex; align-items: center; gap: 10px; background: var(--bg); padding: 10px 12px; border-radius: 12px; flex-wrap: wrap; }
+.place .k { font-weight: 600; font-size: 13px; min-width: 42px; }
+.small-btn { padding: 5px 10px; font-size: 13px; margin-left: auto; }
+@media (max-width: 640px) { .places { grid-template-columns: 1fr; } }

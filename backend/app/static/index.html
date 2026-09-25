@@ -40,6 +40,7 @@
           <select id="time-select">
             <option value="2026-09-21T16:00:00Z">21 Sep 2026, 21:30 IST (latest data)</option>
             <option value="2026-09-21T04:30:00Z">21 Sep 2026, 10:00 IST (morning)</option>
+            <option value="2026-02-10T02:30:00Z">10 Feb 2026, 08:00 IST (dry season)</option>
             <option value="live">Live (now)</option>
           </select>
         </label>
@@ -54,6 +55,15 @@
     <div id="banner" class="banner" hidden></div>
 
     <main class="grid">
+      <!-- Today for you: rule-based guidance -->
+      <section class="card today" id="today">
+        <div class="card-head">
+          <h2>Today for you</h2>
+          <span id="today-place" class="muted small"></span>
+        </div>
+        <div id="today-body" class="today-body"><span class="muted">Loading guidance…</span></div>
+      </section>
+
       <!-- Hero: current PM2.5 -->
       <section class="card hero" id="hero">
         <div class="card-head">
@@ -77,10 +87,20 @@
       <!-- Map -->
       <section class="card map-card">
         <div class="card-head">
-          <h2>Monitoring stations</h2>
-          <span class="muted small">Click the map to check any spot</span>
+          <h2 id="map-title">Monitoring stations</h2>
+          <div class="seg" id="map-mode">
+            <button data-mode="stations" class="active">Stations</button>
+            <button data-mode="city">Bengaluru map</button>
+          </div>
+        </div>
+        <div id="city-controls" class="city-controls" hidden>
+          <select id="city-pollutant" aria-label="Pollutant"><option value="pm25">PM2.5</option><option value="pm10">PM10</option><option value="o3">O3</option></select>
+          <input id="city-hour" type="range" min="0" max="24" value="0" aria-label="Hours ahead">
+          <span id="city-hour-label" class="small">Now</span>
         </div>
         <div id="map" role="application" aria-label="Map of monitoring stations"></div>
+        <div id="city-legend" class="legend" hidden></div>
+        <p class="muted small map-hint">Click the map to check a spot, or save it as your home or work.</p>
         <div id="contrib" class="contrib"></div>
       </section>
 
@@ -131,6 +151,10 @@
           <label>Sex
             <select name="sex"><option value="">—</option><option value="female">Female</option><option value="male">Male</option><option value="other">Other</option><option value="prefer_not_to_say">Prefer not to say</option></select>
           </label>
+          <div class="places">
+            <div class="place"><span class="k">Home</span><span id="home-label" class="muted">Not set</span><button type="button" class="btn ghost small-btn" data-set="home">Set to selected location</button></div>
+            <div class="place"><span class="k">Work</span><span id="work-label" class="muted">Not set</span><button type="button" class="btn ghost small-btn" data-set="work">Set to selected location</button></div>
+          </div>
           <label class="check"><input name="consent" type="checkbox"> I consent to AeroGard storing my location to estimate exposure.</label>
           <button class="btn primary" type="submit">Save profile</button>
         </form>
