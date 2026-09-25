@@ -138,3 +138,31 @@ Findings to report:
 - **v1.0.0 → v1.1.0.** v1.0.0 trained on and was scored against all observed hours. Isolated 600–900 µg/m³ PM2.5 spikes during the monsoon, mostly at 25–50% coverage, looked like sensor glitches, so the target definition was tightened to VALID hours. Both artifacts are kept.
 
 Reports: `docs/experiments/aq_forecast_<pollutant>_1.1.0.json`
+
+## 10. "Today for you" guidance (`app/domain/guidance.py`, `guidance_naqi_v1.0.0`)
+
+This is rule-based air-quality guidance, **not** the Phase 4 risk model. It never says "safe" and never mentions medication.
+
+**Inputs**
+- The 24 h forecasts for PM2.5, PM10 and O₃ at the user's saved home or work, or at a chosen spot.
+- NO₂ and SO₂ are excluded until their units are verified.
+- If a pollutant has no model, it is listed as skipped, never filled in.
+
+**Hourly category.** Each hour is assigned India's NAQI category for its worst pollutant. NAQI is defined on 24 h averages (8 h for O₃), so applying it to hourly forecasts is an approximation.
+
+**Guidance level by sensitivity**
+
+| Tier | Good | Satisfactory | Moderate | Poor | Very Poor / Severe |
+|---|---|---|---|---|---|
+| General (no condition) | good | good | caution | limit | avoid |
+| Asthma/COPD (mild or moderate) | good | caution | limit | avoid | avoid |
+| Asthma/COPD (severe or very severe) | good | caution | avoid | avoid | avoid |
+
+The shift follows NAQI's health statements: "Satisfactory" means minor breathing discomfort for sensitive people, and "Moderate" means breathing discomfort for people with lung disease such as asthma.
+
+**Headline and windows**
+- **Headline** = the worst waking hour (06:00–22:00 IST). This is deliberately conservative.
+- **Best window** = the cleanest two consecutive waking hours.
+- **Avoid windows** = waking runs at "limit" or worse **and** worse than the best hour. On a uniformly bad day none are flagged, and the worst stretch is reported instead.
+
+**City map.** A ~2.2 km grid. Each station is forecast once, then blended per cell with the same inverse-distance weights as point queries. Cells with no usable station within 10 km are left empty.

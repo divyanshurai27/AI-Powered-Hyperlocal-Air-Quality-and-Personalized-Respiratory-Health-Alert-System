@@ -42,7 +42,7 @@ alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-Open http://localhost:8000/docs for the interactive API and http://localhost:8000/health for the health check.
+Open http://localhost:8000 for the web app, http://localhost:8000/docs for the interactive API and http://localhost:8000/health for the health check.
 
 ## Loading data and training
 
@@ -81,6 +81,8 @@ test run also checks the migrations.
 | GET | `/api/v1/air/current?lat&lon[&at]` | bearer |
 | GET | `/api/v1/air/forecast?lat&lon&pollutant[&at]` | bearer |
 | GET | `/api/v1/air/stations` | bearer |
+| GET | `/api/v1/air/map?pollutant[&at]` | bearer |
+| GET | `/api/v1/recommendations/today[?place=home\|work&at]` | bearer |
 | POST | `/api/v1/location` | bearer + consent |
 | GET | `/api/v1/exposure/current`, `/exposure/history` | bearer + consent |
 
