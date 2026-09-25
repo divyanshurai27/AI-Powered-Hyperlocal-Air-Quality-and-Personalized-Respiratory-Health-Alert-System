@@ -38,7 +38,7 @@ Consequences:
 - **Flagged but kept**, highest severity wins:
   - `implausible`: above the physical ceiling, e.g. PM2.5 > 1000 µg/m³;
   - `provider_flagged`;
-  - `low_coverage`: under 75% of sub-hourly readings, matching the CPCB data-capture criterion.
+  - `low_coverage`: under 75% of sub-hourly readings (a common data-completeness convention, not a CPCB-specific rule).
 - **Deduplication identity** = (source, station, pollutant, timestamp). When records conflict, a VALID flag wins, then higher coverage, then the first seen. Database upserts apply the same rule, so re-ingesting is idempotent.
 
 ## 3. Cleaning (`app/domain/cleaning.py`)

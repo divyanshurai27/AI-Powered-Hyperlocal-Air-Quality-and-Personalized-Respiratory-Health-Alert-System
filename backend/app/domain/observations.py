@@ -19,7 +19,8 @@ from app.domain.pollutants import (
     to_canonical,
 )
 
-# CPCB's data-capture criterion: an hourly mean needs ≥75% of its sub-hourly readings.
+# Data-completeness threshold (a common 75% convention): an hourly mean needs ≥75% of its
+# sub-hourly readings to count as VALID.
 MIN_COVERAGE_PCT = 75.0
 
 
