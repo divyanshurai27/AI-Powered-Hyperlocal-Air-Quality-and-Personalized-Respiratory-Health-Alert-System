@@ -34,3 +34,11 @@ def test_unknown_route_uses_error_contract(client) -> None:
     assert r.status_code == 404
     assert r.json()["detail"]["code"] == "NOT_FOUND"
     assert r.json()["detail"]["request_id"] == r.headers["X-Request-ID"]
+
+
+def test_web_client_is_served(client) -> None:
+    r = client.get("/app/")
+    assert r.status_code == 200 and "AeroGard" in r.text
+    assert client.get("/app/app.js").status_code == 200
+    root = client.get("/", follow_redirects=False)
+    assert root.status_code in (302, 307) and root.headers["location"] == "/app/"

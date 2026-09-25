@@ -2,8 +2,11 @@ import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.api.v1.router import api_router
@@ -16,6 +19,8 @@ logger = get_logger("app.request")
 
 # Accept a client-supplied ID only if it is short and safe to echo into logs/headers.
 _SAFE_REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 def create_app() -> FastAPI:
@@ -64,6 +69,14 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
     app.include_router(health.router)  # unversioned /health for probes
     app.include_router(api_router, prefix=settings.api_v1_prefix)
+
+    # Web demo client. Same-origin, so it needs no CORS; it only calls the public API.
+    app.mount("/app", StaticFiles(directory=STATIC_DIR, html=True), name="web")
+
+    @app.get("/", include_in_schema=False)
+    def root() -> RedirectResponse:
+        return RedirectResponse("/app/")
+
     return app
 
 

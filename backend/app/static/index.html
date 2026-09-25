@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AeroGard</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230b6e4f'/%3E%3Cpath d='M8 19c3-6 13-6 16 0' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- ======================= Sign in ======================= -->
+  <main id="auth-view" class="auth" hidden>
+    <section class="auth-card">
+      <div class="brand brand-lg"><span class="logo" aria-hidden="true"></span>AeroGard</div>
+      <p class="muted">Hyperlocal air-quality forecasts and personal exposure for people with asthma or COPD.</p>
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-mode="login" role="tab">Sign in</button>
+        <button class="tab" data-mode="register" role="tab">Create account</button>
+      </div>
+      <form id="auth-form" novalidate>
+        <label>Email <input id="auth-email" type="email" autocomplete="email" required></label>
+        <label>Password <input id="auth-password" type="password" autocomplete="current-password" minlength="8" required></label>
+        <p id="auth-error" class="error" role="alert"></p>
+        <button id="auth-submit" class="btn primary" type="submit">Sign in</button>
+      </form>
+      <p class="fineprint">Research prototype. Not medical advice; does not diagnose or change medication.</p>
+    </section>
+  </main>
+
+  <!-- ======================= App ======================= -->
+  <div id="app-view" hidden>
+    <header class="topbar">
+      <div class="brand"><span class="logo" aria-hidden="true"></span>AeroGard</div>
+      <div class="controls">
+        <label class="ctl">Location
+          <select id="loc-select"></select>
+        </label>
+        <label class="ctl">As of
+          <select id="time-select">
+            <option value="2026-09-21T16:00:00Z">21 Sep 2026, 21:30 IST (latest data)</option>
+            <option value="2026-09-21T04:30:00Z">21 Sep 2026, 10:00 IST (morning)</option>
+            <option value="live">Live (now)</option>
+          </select>
+        </label>
+        <button id="refresh" class="btn ghost" title="Refresh">Refresh</button>
+      </div>
+      <div class="user">
+        <span id="user-email" class="muted"></span>
+        <button id="logout" class="btn ghost">Sign out</button>
+      </div>
+    </header>
+
+    <div id="banner" class="banner" hidden></div>
+
+    <main class="grid">
+      <!-- Hero: current PM2.5 -->
+      <section class="card hero" id="hero">
+        <div class="card-head">
+          <h2>Air quality now</h2>
+          <span id="hero-place" class="muted"></span>
+        </div>
+        <div class="hero-body">
+          <div class="hero-value">
+            <span id="hero-num" class="num">—</span>
+            <span class="unit">µg/m³ PM<sub>2.5</sub></span>
+          </div>
+          <div class="hero-band">
+            <span id="hero-band" class="band">—</span>
+            <span id="hero-meta" class="muted small"></span>
+          </div>
+        </div>
+        <div id="pollutants" class="pollutants"></div>
+        <p class="fineprint">Estimated from nearby CPCB/KSPCB reference monitors, not a measurement at this spot. Bands follow India’s NAQI breakpoints (24-hour basis) and are indicative for hourly values.</p>
+      </section>
+
+      <!-- Map -->
+      <section class="card map-card">
+        <div class="card-head">
+          <h2>Monitoring stations</h2>
+          <span class="muted small">Click the map to check any spot</span>
+        </div>
+        <div id="map" role="application" aria-label="Map of monitoring stations"></div>
+        <div id="contrib" class="contrib"></div>
+      </section>
+
+      <!-- Forecast -->
+      <section class="card forecast-card">
+        <div class="card-head">
+          <h2>Next 24 hours</h2>
+          <div class="seg" id="pollutant-seg">
+            <button data-p="pm25" class="active">PM<sub>2.5</sub></button>
+            <button data-p="pm10">PM<sub>10</sub></button>
+            <button data-p="no2">NO<sub>2</sub></button>
+            <button data-p="o3">O<sub>3</sub></button>
+          </div>
+        </div>
+        <div class="chart-wrap"><canvas id="forecast-chart" aria-label="24 hour forecast chart"></canvas></div>
+        <div id="forecast-meta" class="muted small"></div>
+      </section>
+
+      <!-- Exposure -->
+      <section class="card exposure-card">
+        <div class="card-head">
+          <h2>My exposure (last 24 h)</h2>
+          <button id="simulate" class="btn">Simulate my day</button>
+        </div>
+        <div id="exposure-summary" class="stats"></div>
+        <div class="chart-wrap"><canvas id="exposure-chart" aria-label="Exposure chart"></canvas></div>
+        <p class="fineprint">Exposure = outdoor air at your location × a factor for where you are (home 0.8, office 0.6, traffic 1.3 for PM<sub>2.5</sub>). An estimate, not a personal sensor. Hours without a recent location stay empty.</p>
+      </section>
+
+      <!-- Risk (Phase 4) -->
+      <section class="card risk-card">
+        <div class="card-head"><h2>Personal respiratory risk</h2><span class="pill">Phase 4</span></div>
+        <p>Next: a calibrated probability of an asthma or COPD flare in the next 24 hours, from your exposure, the forecast and your health profile, shown as Low / Moderate / High / Severe with the main contributing factors.</p>
+        <p class="muted small">Not shown yet on purpose: the model is still being built, and AeroGard never displays placeholder risk numbers.</p>
+      </section>
+
+      <!-- Profile -->
+      <section class="card profile-card">
+        <div class="card-head"><h2>My profile</h2><span id="profile-status" class="pill"></span></div>
+        <form id="profile-form" class="profile">
+          <label>Condition
+            <select name="disease_type"><option value="">—</option><option value="asthma">Asthma</option><option value="copd">COPD</option></select>
+          </label>
+          <label>Severity
+            <select name="severity"><option value="">—</option><option value="mild">Mild</option><option value="moderate">Moderate</option><option value="severe">Severe</option><option value="very_severe">Very severe</option></select>
+          </label>
+          <label>Age <input name="age" type="number" min="0" max="120"></label>
+          <label>Sex
+            <select name="sex"><option value="">—</option><option value="female">Female</option><option value="male">Male</option><option value="other">Other</option><option value="prefer_not_to_say">Prefer not to say</option></select>
+          </label>
+          <label class="check"><input name="consent" type="checkbox"> I consent to AeroGard storing my location to estimate exposure.</label>
+          <button class="btn primary" type="submit">Save profile</button>
+        </form>
+      </section>
+    </main>
+    <footer class="foot muted small">AeroGard research prototype · data: CPCB/KSPCB via OpenAQ, ERA5 via Open-Meteo · not medical advice</footer>
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="vendor/chart.umd.min.js"></script>
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
