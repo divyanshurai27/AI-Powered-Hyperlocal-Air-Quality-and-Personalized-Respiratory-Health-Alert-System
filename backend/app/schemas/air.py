@@ -72,3 +72,21 @@ class ForecastResponse(BaseModel):
     hours: list[ForecastHour] = []
     unavailable_reason: str | None = None
     unavailable_detail: str | None = None
+
+
+class MapCell(BaseModel):
+    latitude: float
+    longitude: float
+    now: float | None = Field(description="Current estimate; null where no usable station is near")
+    forecast: list[float] | None = Field(default=None, description="Index i = horizon i+1 hours")
+    stations: int
+
+
+class CityMapResponse(BaseModel):
+    pollutant: str
+    unit: str = "µg/m³"
+    at: datetime
+    step_deg: float
+    origin: datetime | None
+    model_version: str | None
+    cells: list[MapCell]

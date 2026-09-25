@@ -7,15 +7,18 @@ from app.domain.pollutants import Pollutant
 from app.domain.spatial import LocalEstimate, Unavailable
 from app.repositories.environment import StationRepository
 from app.schemas.air import (
+    CityMapResponse,
     CurrentAirResponse,
     ForecastHour,
     ForecastResponse,
+    MapCell,
     PollutantEstimate,
     StationContribution,
     StationOut,
 )
 from app.schemas.common import ErrorResponse
 from app.services.air import AirService
+from app.services.city_map import CityMapService
 from app.services.forecast import ForecastService
 
 router = APIRouter(prefix="/air", tags=["air quality"], responses={401: {"model": ErrorResponse}})
@@ -130,4 +133,25 @@ def forecast_air(
             ForecastHour(horizon_hours=h, target_time=t, concentration=v)
             for h, t, v in result.horizons
         ],
+    )
+
+
+@router.get("/map", response_model=CityMapResponse, summary="City-wide grid, now and next 24 h")
+def city_map(
+    _: CurrentUser,
+    db: DbSession,
+    pollutant: Pollutant = Pollutant.PM25,
+    at: datetime | None = Query(None, description="Evaluate as of this instant"),
+    forecast: bool = Query(True, description="Include the 24 h forecast per cell"),
+) -> CityMapResponse:
+    """≈2 km grid over the study area. Cells with no usable monitor within the matching
+    radius have `now: null` and no forecast: gaps are shown, not filled."""
+    g = CityMapService(db).grid(pollutant, at, with_forecast=forecast)
+    return CityMapResponse(
+        pollutant=g.pollutant.value,
+        at=g.at,
+        step_deg=g.step_deg,
+        origin=g.origin,
+        model_version=g.model_version,
+        cells=[MapCell(**vars(c)) for c in g.cells],
     )
