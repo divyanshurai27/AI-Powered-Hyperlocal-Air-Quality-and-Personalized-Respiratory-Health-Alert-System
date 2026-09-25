@@ -52,7 +52,13 @@ class PatientService:
             )
 
         for field, value in changes.items():
-            setattr(profile, field, value)
+            if field in ("home", "work"):
+                place = value or {}
+                setattr(profile, f"{field}_label", place.get("label"))
+                setattr(profile, f"{field}_latitude", place.get("latitude"))
+                setattr(profile, f"{field}_longitude", place.get("longitude"))
+            else:
+                setattr(profile, field, value)
 
         # Field names only: audit logs must not hold health data values.
         self.audit.write(

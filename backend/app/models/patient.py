@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, SmallInteger
+from sqlalchemy import CheckConstraint, DateTime, Double, ForeignKey, SmallInteger, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -19,6 +19,9 @@ class PatientProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "patient_profiles"
     __table_args__ = (
         CheckConstraint("age IS NULL OR (age >= 0 AND age <= 120)", name="age_range"),
+        # A saved place is either fully set (both coordinates) or absent.
+        CheckConstraint("(home_latitude IS NULL) = (home_longitude IS NULL)", name="home_pair"),
+        CheckConstraint("(work_latitude IS NULL) = (work_longitude IS NULL)", name="work_pair"),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -39,9 +42,36 @@ class PatientProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     baseline_information: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
+    # Saved places so each user's dashboard and guidance open on *their* area. Sensitive:
+    # patient-scoped access only, and never written to the audit log.
+    home_label: Mapped[str | None] = mapped_column(String(80), default=None)
+    home_latitude: Mapped[float | None] = mapped_column(Double, default=None)
+    home_longitude: Mapped[float | None] = mapped_column(Double, default=None)
+    work_label: Mapped[str | None] = mapped_column(String(80), default=None)
+    work_latitude: Mapped[float | None] = mapped_column(Double, default=None)
+    work_longitude: Mapped[float | None] = mapped_column(Double, default=None)
+
     user: Mapped["User"] = relationship(back_populates="patient_profile")
 
     @property
     def profile_complete(self) -> bool:
         """True once the minimum fields the risk model needs are present (PRD §14)."""
         return None not in (self.age, self.sex, self.disease_type, self.severity)
+
+    def saved_place(self, kind: str) -> dict[str, Any] | None:
+        lat, lon = getattr(self, f"{kind}_latitude"), getattr(self, f"{kind}_longitude")
+        if lat is None or lon is None:
+            return None
+        return {
+            "label": getattr(self, f"{kind}_label") or kind.title(),
+            "latitude": lat,
+            "longitude": lon,
+        }
+
+    @property
+    def home(self) -> dict[str, Any] | None:
+        return self.saved_place("home")
+
+    @property
+    def work(self) -> dict[str, Any] | None:
+        return self.saved_place("work")
