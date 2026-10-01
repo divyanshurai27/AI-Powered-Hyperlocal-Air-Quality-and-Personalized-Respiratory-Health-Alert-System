@@ -6,7 +6,7 @@ python -m app.cli backfill-weather --start 2025-02-18 --end 2026-09-24
 python -m app.cli fetch-forecast
 python -m app.cli summary
 python -m app.cli probe-datagovin
-python -m app.cli seed-demo-patient --email demo@aerogard.local --password ... --index 3
+python -m app.cli seed-demo-patient --email demo@aerogard.in --password ... --index 3
 """
 
 import argparse

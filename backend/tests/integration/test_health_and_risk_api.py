@@ -280,3 +280,22 @@ def test_demo_seed_creates_a_usable_synthetic_account(client, db) -> None:
     )
     me = client.get(ME, headers={"Authorization": f"Bearer {login.json()['access_token']}"})
     assert me.json()["profile_complete"] and me.json()["consent_status"] == "granted"
+
+
+def test_demo_seed_rejects_an_email_login_would_refuse(db) -> None:
+    from pydantic import ValidationError
+
+    from app.services.demo_seed import seed_demo_patient
+    from tests.fixtures.cohort import small_cohort
+
+    cohort = small_cohort(2, 20)
+    with pytest.raises(ValidationError):
+        seed_demo_patient(
+            db,
+            cohort,
+            0,
+            "demo@aerogard.local",
+            "correct-horse-1",
+            cohort.hours[-1].to_pydatetime(),
+            days=5,
+        )

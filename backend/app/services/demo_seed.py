@@ -21,6 +21,7 @@ from app.domain.enums import ConsentStatus, HealthSource
 from app.ml.cohort import ENV_CODES, OTHER, TRANSIT, Cohort
 from app.models import LocationRecord
 from app.repositories.health import HealthRecordRepository
+from app.schemas.auth import RegisterRequest
 from app.services.auth import AuthService
 
 INT_COLUMNS = ("symptom_score", "rescue_inhaler_puffs", "steps")
@@ -37,7 +38,9 @@ def seed_demo_patient(
     days: int = 30,
 ) -> dict:
     p = cohort.patients.iloc[index]
-    user, profile = AuthService(db).register(email, password)
+    # Same rules as POST /auth/register, so the account can actually log in afterwards.
+    creds = RegisterRequest(email=email, password=password)
+    user, profile = AuthService(db).register(creds.email, creds.password)
     profile.age = int(p.age)
     profile.sex = p.sex
     profile.disease_type = p.disease_type
@@ -65,7 +68,7 @@ def seed_demo_patient(
     start_ts = end_ts - pd.Timedelta(days=days)
     in_window = (cohort.hours > start_ts) & (cohort.hours <= end_ts)
     if not in_window.any():
-        raise ValueError(f"the cohort covers {cohort.hours[0]} → {cohort.hours[-1]}, not {end}")
+        raise ValueError(f"the cohort covers {cohort.hours[0]} to {cohort.hours[-1]}, not {end}")
 
     home = np.array([p.home_latitude, p.home_longitude])
     work = np.array([p.work_latitude, p.work_longitude]) if p.employed else home
@@ -114,6 +117,6 @@ def seed_demo_patient(
         "severity": p.severity,
         "locations": len(fixes),
         "health_records": stored,
-        "window": f"{start_ts.isoformat()} → {end_ts.isoformat()}",
+        "window": f"{start_ts.isoformat()} to {end_ts.isoformat()}",
         "events_in_window": int(cohort.onset[index, in_window].sum()),
     }
