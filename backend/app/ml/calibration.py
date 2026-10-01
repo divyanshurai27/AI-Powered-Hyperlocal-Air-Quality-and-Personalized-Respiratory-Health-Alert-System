@@ -5,9 +5,12 @@ model (CALIBRATION_VERSION), so the model and the mapping to reported probabilit
 audited independently. One calibrator per disease head, because the heads' raw scores are
 on different scales.
 
-Method choice is fixed up front, not picked on test data: isotonic regression when the
-validation set has at least ISOTONIC_MIN_POSITIVES events for that disease, else Platt
-(logistic) scaling, which needs far less data.
+Method: Platt (logistic) scaling for every disease (v1.1.0). v1.0.0 used isotonic regression
+whenever validation had ≥ ISOTONIC_MIN_POSITIVES events. Isotonic's lowest block can hold zero
+events, so it reported a risk of ~0 for 6% of asthma and 4% of COPD test predictions, and 25
+events then happened among those "zero-risk" moments, with no Brier gain over Platt. An
+exact-zero probability is not credible for a person with a ~1.5% daily base rate, so Platt
+(monotone, never 0 or 1) became the rule. Isotonic remains available for comparison.
 """
 
 from dataclasses import dataclass, field
@@ -18,7 +21,7 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score, roc_auc_score
 
-CALIBRATION_VERSION = "calibration_v1.0.0"
+CALIBRATION_VERSION = "calibration_v1.1.0"
 ISOTONIC_MIN_POSITIVES = 200
 ECE_BINS = 10
 EPS = 1e-6
@@ -175,11 +178,12 @@ class Calibrator:
         return np.clip(out, EPS, 1 - EPS)
 
 
-def fit_calibration_model(raw: np.ndarray, y: np.ndarray) -> Calibrator:
+def fit_calibration_model(raw: np.ndarray, y: np.ndarray, method: str = "platt") -> Calibrator:
+    """method="platt" (the rule) or "isotonic" (comparison only; needs enough events)."""
     raw, y = np.asarray(raw, float), np.asarray(y, int)
     if y.sum() == 0 or y.sum() == y.size:
         return Calibrator("identity")
-    if y.sum() >= ISOTONIC_MIN_POSITIVES:
+    if method == "isotonic" and y.sum() >= ISOTONIC_MIN_POSITIVES:
         iso = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
         iso.fit(raw, y)
         return Calibrator("isotonic", {"n": int(y.size), "positives": int(y.sum())}, iso)

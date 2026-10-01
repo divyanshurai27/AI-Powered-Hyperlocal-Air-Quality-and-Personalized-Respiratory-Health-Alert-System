@@ -57,19 +57,32 @@ def test_validate_reports_prd_metrics() -> None:
 def test_isotonic_fixes_a_miscalibrated_score() -> None:
     p, y = calibrated_sample()
     raw = p**0.5  # monotone but badly calibrated
-    cal = fit_calibration_model(raw, y)
+    cal = fit_calibration_model(raw, y, method="isotonic")
     assert cal.method == "isotonic"
     fixed = cal.transform(raw)
     assert calibration_error(fixed, y)["ece"] < calibration_error(raw, y)["ece"] / 5
     assert ((fixed > 0) & (fixed < 1)).all()  # BR-01, and strictly inside for the logit
 
 
-def test_small_samples_use_platt() -> None:
+def test_platt_is_the_default_and_strictly_increasing() -> None:
+    """Isotonic is a step function and can map a whole low block to ~0; Platt never flattens."""
+    p, y = calibrated_sample()
+    raw = p**0.5
+    platt = fit_calibration_model(raw, y)
+    iso = fit_calibration_model(raw, y, method="isotonic")
+    assert platt.method == "platt"
+    grid = np.linspace(0.01, 0.3, 60)
+    assert (np.diff(platt.transform(grid)) > 0).all()
+    assert (np.diff(iso.transform(grid)) == 0).any()
+    assert calibration_error(platt.transform(raw), y)["ece"] < calibration_error(raw, y)["ece"]
+
+
+def test_isotonic_falls_back_to_platt_with_few_events() -> None:
     rng = np.random.default_rng(1)
     raw = rng.random(2000) * 0.1
     y = (rng.random(2000) < raw).astype(int)
     assert y.sum() < ISOTONIC_MIN_POSITIVES
-    cal = fit_calibration_model(raw, y)
+    cal = fit_calibration_model(raw, y, method="isotonic")
     assert cal.method == "platt"
     out = cal.transform(np.array([0.0, 0.5, 1.0]))
     assert ((out > 0) & (out < 1)).all()

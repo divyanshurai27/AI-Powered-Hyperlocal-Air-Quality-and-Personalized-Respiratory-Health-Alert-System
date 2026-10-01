@@ -37,8 +37,8 @@ PERSONALIZATION_VERSION = "personal_offset_v1.0.0"
 
 # Lower bounds (inclusive) of Moderate, High, Severe; below the first is Low.
 RISK_THRESHOLDS: dict[DiseaseType, tuple[float, float, float]] = {
-    DiseaseType.ASTHMA: (0.025, 0.057, 0.101),
-    DiseaseType.COPD: (0.021, 0.052, 0.078),
+    DiseaseType.ASTHMA: (0.025, 0.048, 0.077),
+    DiseaseType.COPD: (0.021, 0.052, 0.080),
 }
 # Level at or above which a prediction is an "alert" in the personalization comparison.
 ALERT_LEVEL = RiskLevel.HIGH

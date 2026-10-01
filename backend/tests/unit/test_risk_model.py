@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from app.ml.calibration import fit_disease_calibrators
+from app.ml.calibration import CALIBRATION_VERSION, fit_disease_calibrators
 from app.ml.risk import (
     LogisticRisk,
     PooledGBM,
@@ -104,7 +104,7 @@ def _meta(**over) -> RiskArtifactMetadata:
         hyperparameters={},
         head_iterations={},
         stratum_daily_rates={"asthma|mild": 0.01},
-        calibration_version="calibration_v1.0.0",
+        calibration_version=CALIBRATION_VERSION,
         calibration_methods={},
         validation_metrics={},
         test_metrics={},
