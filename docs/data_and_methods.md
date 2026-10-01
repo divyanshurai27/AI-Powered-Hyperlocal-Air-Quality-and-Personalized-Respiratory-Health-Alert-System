@@ -101,15 +101,15 @@ exposure = local ambient × F(microenvironment, pollutant). **This is a proxy, n
 | indoor_other | 0.6 | 0.5 | 0.5 | 0.2 | 0.4 | 0.8 |
 | in_transit | 1.3 | 1.3 | 1.6 | 0.8 | 1.1 | 1.8 |
 
-- The factors are central assumptions drawn from indoor/outdoor and in-transit literature ranges, not calibrated to AeroGard users. `sensitivity_factors(scale)` re-runs results with the non-outdoor factors scaled, and the paper must report that sensitivity.
+- The factors are central assumptions drawn from indoor/outdoor and in-transit literature ranges, not calibrated to AeroGard users. `sensitivity_factors(scale)` re-runs results with the non-outdoor factors scaled. The sensitivity analysis is in §14.
 - If the microenvironment is unknown, F = 1.0 and the hour is flagged `assumed_outdoor`.
 - If there's no location fix within 2 h at or before an hour, that hour's exposure is missing (`location_unavailable`), never guessed (BR-07).
 - Window statistics (6/24/72 h mean, max and cumulative µg/m³·h) report their coverage and are marked incomplete below 75%.
 
 ## 8. Privacy and access
 
-- Location and exposure endpoints need `consent_status = granted`. They are patient-scoped with ownership checks (BR-11).
-- Audit logs record counts and field names, never location or health values.
+- Location, exposure, health-record and risk endpoints need `consent_status = granted`. They are patient-scoped with ownership checks (BR-11): every route is `/me`, and every query filters by the caller's patient ID.
+- Audit logs record counts and field names, never location, health values or risk probabilities.
 
 ## 9. Results: 24 h AQ forecast v1.1.0 (dataset `aq_1a51008ca3ce9fa6`, run 2026-09-25)
 
@@ -166,3 +166,186 @@ The shift follows NAQI's health statements: "Satisfactory" means minor breathing
 - **Avoid windows** = waking runs at "limit" or worse **and** worse than the best hour. On a uniformly bad day none are flagged, and the worst stretch is reported instead.
 
 **City map.** A ~2.2 km grid. Each station is forecast once, then blended per cell with the same inverse-distance weights as point queries. Cells with no usable station within 10 km are left empty.
+
+## 11. Synthetic respiratory cohort (`app/ml/cohort.py`, `cohort_v1.0.0`)
+
+No respiratory outcome data exist for Bengaluru, so the risk layer is developed and evaluated on a **simulated** panel of patients (PRD §3.2). **Every risk result in this document is a synthetic-data evaluation, not clinical validation.**
+
+**Real vs simulated**
+- Real: hourly PM2.5, PM10 and O₃ at the 14 CPCB/KSPCB monitors, and ERA5 weather, 2025-02-18 → last observation.
+- Simulated: the patients, their homes, workplaces and routines, their personal exposure, infections, symptom diaries, wearable readings and exacerbations.
+
+**Data-generating process** (all constants in `CohortConfig`)
+1. **Patients** (default 400, seed 2026): 40% COPD. Severity mix: asthma 40/35/18/7%, COPD 25/40/25/10% (mild → very severe). Ages: asthma ~N(35, 14), COPD ~N(62, 9). Homes are uniform within 12 km of the city centre; workers (about 70% of asthma patients under 60, 50% of COPD patients) have a workplace within 14 km.
+2. **Hidden traits** (never features): frailty u ~ N(0, 0.5); pollution sensitivity s ~ LogNormal with mean 1 (σ 0.7); personal microenvironment factors = the §7 table × LogNormal(0, 0.25), standing for housing and ventilation differences.
+3. **Routine:** home, a 1 h commute (in transit, halfway point), work indoors until the return hour, a commute back; 15% work-from-home days; weekend errands and evenings out; a morning walk for 40% of patients.
+4. **True exposure** = true ambient at the place × the personal factor. True ambient is an IDW field over every station with a value, times a smooth AR(1) noise (σ 0.15, ρ 0.97 per hour) for street-scale variation the monitors can't see.
+5. **What the system sees** mirrors production:
+   - Location is logged per hour with a patient-specific rate (Beta(8, 1.5), mean 0.84) plus 5% whole-day dropouts.
+   - A fix up to 2 h old covers an hour (BR-07).
+   - The activity context is unknown 10% of the time.
+   - Ambient is computed with the live spatial rule: 10 km radius, at most 4 stations, readings at most 3 h old. `idw_field` is tested against `domain.spatial.estimate_local_air_quality`.
+6. **Hourly event hazard.** Event = a respiratory exacerbation episode: a symptom flare needing extra reliever or unscheduled care.
+
+   log λ = c_stratum + u + s·ln(1.10)·(Ē₂.₅ − 25)/10 + ln(1.03)·(Ē₁₀ − 50)/10 + ln(1.04)·(Ē_O₃ − 60)/10 + ln(1.15)·max(0, 18 − T)/5 + ln(1.2)·[RH > 85] + ln(8)·infection + ln(2.2)·control + ln(1.8)·[event in last 14 d] + ln(1.5)·[asthma, 00–06 IST]
+
+   - Ē are exponential moving averages of **true** personal exposure, with a half-life of 24 h for PM and 8 h for O₃.
+   - Infections: 4 per year, seasonal (×1.6 in Jun–Sep, ×1.3 in Dec–Feb), lasting 5–10 days.
+   - *control* is a latent daily AR(1) loss-of-control state (ρ 0.85, unit variance). Exacerbations are typically preceded by days of worsening symptoms, and this is where that shows up.
+   - c_stratum is solved so each disease × severity stratum has its configured annual rate: asthma 4/6/9/12, COPD 3/4/6/8 events per year.
+   - After an onset, the episode lasts 72 h, with no new onset during it.
+   - All pollution terms are multiplied by `aq_effect_scale`. Setting it to 0 is a negative control in which pollution has no effect.
+7. **Diary** at 21:00 IST, covering the preceding 24 h:
+   - Symptom score 0–10 ≈ severity + 3.5·infection + control + the pollution response + 3·[in an episode] + N(0, 1). Rescue puffs are Poisson in the symptom score. The exacerbation flag is set if an onset occurred that day.
+   - Each diary is filled with probability equal to the patient's adherence, Beta(6, 2), mean 0.75.
+   - 40% of patients wear a device giving SpO₂, resting heart rate, steps and sleep.
+
+**Assumptions to state in the paper.** The effect sizes are chosen to give a plausible, learnable signal. Panel studies report symptom-flare odds ratios of roughly 1.05–1.15 per 10 µg/m³ PM2.5, and viral infection is the dominant trigger. They are **not** calibrated to Indian epidemiology. The latent control state was added after a first draft gave AUROC ≈ 0.62 on a synthetic field: almost all events in that draft were unpredictable noise, which contradicts the prodrome literature. No further tuning toward a target score was done.
+
+## 12. Health records and risk features
+
+**Health records** (`health_records`, PRD §6.4). Diary entries and device summaries: symptom score, rescue puffs, exacerbation flag, heart rate, SpO₂, respiratory rate, steps, sleep, peak flow.
+- Every field is optional, but a record needs at least one (DB check `num_nonnulls > 0`). An absent field stays NULL, never 0 (BR-06).
+- Ranges are enforced in both the API and the database. Repeats of (patient, timestamp, source) are ignored.
+- Clients can send `manual` or `health_connect`. `synthetic` is reserved for demo seeding.
+
+**Risk target.** y = 1 if an event **starts** in (T, T+24 h]. Origins are two random whole hours per patient-day, so the model can be applied at any hour. Excluded origins:
+- the first 10 days (warm-up for the longest lookback)
+- the last 24 h of data
+- origins inside an ongoing episode
+
+**Features** (`app/ml/risk_features.py`, `risk_features_v1.0.0`, 38 features). The same functions build training rows and the live API row.
+
+| Group | Features |
+|---|---|
+| Exposure (estimated, µg/m³) | PM2.5 now, 6/24/72 h mean, 24 h max, 24 h change, 24 h coverage; PM10 24 h mean, max and change; O₃ 8 h mean, 24 h max |
+| Weather | temperature, RH, 24 h temperature change, 24 h precipitation |
+| Calendar | hour and month (sin/cos), weekend |
+| Profile | age, sex, COPD flag, severity (0–3) |
+| Health | last symptom score (≤ 48 h old), 3/7-day mean, trend (3 d vs the 7 d before), last and 3-day rescue puffs, diary days in 7 d, events in 90 d, days since last event (capped at 365), last SpO₂ and heart rate (≤ 72 h old), 3-day steps, last sleep |
+
+- Every feature declares a lookback of 0 or less. A test scrambles all inputs after T and requires identical features (BR-04).
+- Missing values stay NaN. The training data contains the same kinds of gaps (unlogged hours, skipped diaries, no wearable), so LightGBM learns a branch for "missing". This is the BR-06 fallback.
+- NO₂ and SO₂ are excluded until their units are verified (§1).
+
+## 13. Risk model, calibration, policy and personalization
+
+**Model** (`app/ml/risk.py`). A shared LightGBM trunk is trained on all patients, with disease as a feature. One LightGBM head per disease is then boosted from the trunk's output: small trees, a slow learning rate, and early stopping on validation. Probability = sigmoid(trunk + head). Baselines on the same protocol:
+- stratum prior (base rate per disease × severity)
+- logistic regression with missing-value indicators
+- pooled LightGBM (the trunk alone)
+- separate per-disease LightGBM
+- ablations: without exposure features, and without health features
+
+**Protocol** (`ml/risk/train_risk_model.py`, fixed before any test result was seen)
+- **Patients:** 80% seen, 20% unseen (test only).
+- **Time:** train ≤ 2026-01-31 < validation ≤ 2026-04-30 < test. Origins whose label window crosses a boundary are dropped.
+- **Validation is used for:** early stopping, calibration, and deriving the policy thresholds. Test data is used once.
+- **95% CIs:** patient-level cluster bootstrap with 200 resamples.
+
+**Calibration** (`app/ml/calibration.py`, `calibration_v1.1.0`)
+- One Platt (logistic) calibrator per disease, fitted on validation.
+- **v1.0.0 → v1.1.0.** v1.0.0 used isotonic regression whenever validation had at least 200 events. Isotonic's lowest block can contain no events, so v1.0.0 reported a risk of about 0 for 6% of asthma and 4% of COPD test predictions. 25 events then occurred among those "zero-risk" moments, and isotonic gave no Brier gain. An exact-zero risk is not credible at a ~1.5% daily base rate, so Platt (monotone, never 0 or 1) became the rule. The problem was found during the live API check of a demo patient. As a side effect, AUROC also improved from 0.700 to 0.708, because isotonic's flat steps had created ties in the ranking.
+- Reported: Brier score, Brier skill vs the base rate, and ECE/MCE over 10 equal-frequency bins. Equal-width bins would be empty above about 0.2 at these base rates.
+
+**Policy** (`app/domain/risk_policy.py`, `risk_policy_v1.0.0`). Thresholds are set per disease on calibrated validation probabilities:
+- Moderate ≥ 1.5 × base rate
+- High = the F1-optimal alert threshold
+- Severe = the top 1% of validation probabilities. A precision-0.5 target is never reached at a ~1.5% base rate, so it can't be used.
+
+The thresholds are a config, so changing them needs no retraining (PRD §15.3).
+
+**Personalization** (`personal_offset_v1.0.0`). p' = sigmoid(logit p + offset), where offset = ln((O + 2) / (E + 2)), clipped to ±ln 2.
+- O = exacerbations the patient reported in the past year, before T.
+- E = the stratum's rate of reported exacerbations per diary day × the patient's diary days.
+- Counting per diary day stops a non-diarist from looking healthier than they are. With little history the offset tends to 0. `?personalize=false` turns it off.
+
+**Serving** (`app/services/risk.py`)
+- Location: the latest fresh fix, otherwise the saved home (flagged), otherwise none. With no location the confidence is marked low and the forecast is refused.
+- The rolling forecast applies the model at T+1 … T+24. Exposure is projected from the 24 h AQ forecast at the current place and microenvironment, while health and weather are held at T. Horizons the AQ forecast doesn't cover are returned as unavailable.
+- Each prediction is stored once per (patient, time, horizon, versions), with its feature vector (BR-08/09/10).
+
+## 14. Results: respiratory risk `risk_v1.0.0` + `calibration_v1.1.0` (SYNTHETIC labels)
+
+Cohort `cohort_v1.0.0`: 400 patients (250 asthma, 150 COPD), AQ dataset `aq_12ffff43711bdabc`, 3,449 events (5.4 per patient-year).
+- Matrix `risk_86916fe8fac8bc65`: 425,114 origins.
+- Train 201,422 rows (2,974 events); validation 52,623 (832); test (seen patients, 2026-05-01 → 2026-09-20) 84,908 (1,241); test (unseen patients) 21,293 (311).
+- Test prevalence ≈ 1.5% per 24 h.
+
+**Model comparison, test, seen patients (95% CI, patient-level bootstrap)**
+
+| Model | AUROC | AUPRC | Brier | ECE |
+|---|---|---|---|---|
+| stratum prior (no features) | 0.597 [0.564, 0.632] | 0.020 | 0.01438 | 0.0018 |
+| logistic regression | 0.699 [0.674, 0.724] | 0.043 | 0.01424 | 0.0025 |
+| LightGBM pooled | 0.709 [0.685, 0.732] | 0.043 | 0.01423 | 0.0025 |
+| LightGBM separate per disease | 0.701 [0.679, 0.724] | 0.043 | 0.01423 | 0.0022 |
+| **LightGBM shared trunk + heads (served)** | **0.708 [0.684, 0.732]** | 0.043 | 0.01423 | 0.0025 |
+| ablation: no exposure features | 0.709 [0.685, 0.732] | 0.045 | 0.01421 | 0.0025 |
+| ablation: no health features | 0.583 [0.555, 0.608] | 0.020 | 0.01439 | 0.0022 |
+
+- Unseen patients: shared heads 0.721 [0.667, 0.758], logistic 0.725, no-exposure 0.730. The model generalises to people it never saw.
+- By disease (seen): asthma 0.713, COPD 0.689. Early stopping kept the asthma head at 1 tree and the COPD head at 27.
+
+**Findings to report**
+- **Symptom-diary features carry the predictive signal.** Without them AUROC falls to 0.58, close to the stratum prior.
+- **The shared-head architecture is not measurably better** than one pooled LightGBM, or than logistic regression. All CIs overlap. It is kept because it costs nothing and lets the COPD head learn a correction (27 trees), but the paper must not claim a gain.
+- **Exposure features add no measurable value** at the configured effect sizes: the no-exposure ablation is equal or better at every effect scale (table below). Two reasons were diagnosed (`data/processed/diag_exposure.py`, not committed):
+  1. The test period is the monsoon. Test PM2.5 exposure averages 17 µg/m³ (90th percentile 29, against 23.8 in training), mostly below the hazard's 25 µg/m³ reference. At scale 1 the PM2.5 term varies by only 0.11 log-hazard units, against 2.08 for a peak infection.
+  2. The diary already carries the pollution response, because the simulated symptom score rises with exposure. At scale 4, exposure alone reaches a univariate AUROC of 0.68 in training but only 0.56 in test, and the symptom features absorb most of it.
+  
+  The test period was fixed before any result was seen and was not moved. A winter test window would be a separate, clearly labelled secondary analysis.
+- **Well calibrated in absolute terms** (ECE 0.0025). Test events run about 20% above the predicted rate in most bins, because the monsoon test period has more infections than the Feb–Apr validation period the calibrators were fitted on. This is a seasonal base-rate shift, and it should be named in the paper.
+
+**Effect-size sweep** (`--aq-effect-scale`, test on seen patients; the scale-1 row is the main run)
+
+| Pollution effect | Events | Shared heads AUROC | No-exposure ablation AUROC |
+|---|---|---|---|
+| 0 (negative control) | 3,469 | 0.722 [0.701, 0.744] | 0.723 |
+| 1 (default) | 3,449 | 0.708 [0.684, 0.732] | 0.709 |
+| 2 | 3,431 | 0.713 [0.690, 0.736] | 0.716 |
+| 4 | 2,370 | 0.717 [0.687, 0.747] | 0.724 |
+
+The negative control behaves as it should: with no pollution effect, exposure features add nothing. They still add nothing at 2× and 4×, for the two reasons above. At scale 4 there are fewer events, because the stratum rates are solved over the whole period, which shifts events into the polluted winter.
+
+**Risk levels on test (`risk_policy_v1.0.0`)**
+
+| | Low | Moderate | High | Severe |
+|---|---|---|---|---|
+| Asthma: share of time | 88.9% | 8.2% | 2.1% | 0.8% |
+| Asthma: observed event rate | 1.2% | 4.2% | 7.0% | 11.5% |
+| COPD: share of time | 89.8% | 8.5% | 1.3% | 0.5% |
+| COPD: observed event rate | 0.9% | 3.3% | 4.4% | 5.0% |
+
+Event rates rise with each level, so the levels separate risk. The thresholds (asthma 0.025 / 0.048 / 0.077, COPD 0.021 / 0.052 / 0.080) came from validation only.
+
+**Personalization (PRD §16), test, seen patients.** Alert = High or Severe, except for the AQ rules.
+
+| Strategy | Precision | Recall | F1 | Share of time alerting |
+|---|---|---|---|---|
+| generic AQ threshold (NAQI Poor: PM2.5 > 90 or PM10 > 250) | 0.043 | 0.001 | 0.002 | 0.03% |
+| disease-specific AQ threshold (NAQI Moderate: PM2.5 > 60 or PM10 > 100) | 0.025 | 0.011 | 0.015 | 0.6% |
+| model, one global threshold | 0.069 | 0.123 | 0.089 | 2.6% |
+| model, disease-specific thresholds | 0.072 | 0.120 | 0.090 | 2.5% |
+| model + adaptive personal offset | 0.067 | 0.178 | 0.097 | 3.9% |
+
+- **Bengaluru's air almost never crosses the NAQI thresholds**, so AQ-only alerting is close to silent. This is a real finding about the study area, not a weakness of the rules.
+- The personal offset raises recall (0.12 → 0.18) at the cost of alerting more often (2.5% → 3.9% of the time). Probability quality is unchanged: AUROC 0.708 → 0.707, AUPRC 0.043 → 0.045, Brier 0.01423 both. For unseen patients its F1 is slightly lower (0.089 vs 0.093). **The gain is a different operating point, not better discrimination.** The model's own history features (events in 90 d, days since the last event) already capture most of what the offset adds.
+
+**Exposure sensitivity analysis (deferred from Phase 3).** The model is retrained for each scenario. Exposure error is the 24 h mean PM2.5 against the simulated truth, test period.
+
+| Exposure used | MAE (µg/m³) | Bias | Spearman ρ | AUROC |
+|---|---|---|---|---|
+| estimated (production rule) | 3.99 | −0.21 | 0.800 | 0.708 |
+| microenvironment factors × 0.8 | 4.50 | −3.18 | 0.799 | 0.708 |
+| microenvironment factors × 1.2 | 4.97 | +2.76 | 0.800 | 0.708 |
+| ambient at home only (no mobility) | 5.76 | +3.66 | 0.777 | 0.706 |
+| true exposure (oracle) | 0 | 0 | 1 | 0.708 |
+
+- The production estimate is the least biased option. The ±20% factor perturbations only shift the bias, because rescaling barely changes the ranking (ρ stays 0.80).
+- Ignoring mobility (home ambient only) increases error by 44% and overstates exposure, because people spend time in lower-exposure indoor settings.
+- Risk discrimination does not depend on exposure quality here, which follows from the exposure finding above.
+
+**Calibration version note.** `calibration_v1.0.0` (isotonic) gave AUROC 0.700 and reported exact-zero risks. See §13.
+
+Reports: `docs/experiments/risk_1.0.0.json` (main), `risk_1.0.0_aq0.json`, `_aq2.json`, `_aq4.json`.

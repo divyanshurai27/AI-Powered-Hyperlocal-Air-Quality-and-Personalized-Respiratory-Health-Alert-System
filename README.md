@@ -53,6 +53,17 @@ python -m app.cli backfill-weather --start 2025-02-18 --end 2026-09-25
 python -m app.cli summary
 cd ..
 python ml/forecasting/train_aq_forecast.py --pollutant pm25 --version 1.1.0
+python ml/risk/train_risk_model.py                                  # synthetic cohort + risk model
+python ml/risk/train_risk_model.py --aq-effect-scale 0 --no-save    # negative control
+```
+
+The risk model is trained on a **synthetic** patient cohort simulated inside the real Bengaluru
+pollution field (`backend/app/ml/cohort.py`); its results are a synthetic-data evaluation, not
+clinical validation. To get a demo account built from one synthetic patient:
+
+```powershell
+cd backend
+python -m app.cli seed-demo-patient --email demo@aerogard.in --password <pw> --index 3
 ```
 
 Methods, data caveats and results: [`docs/data_and_methods.md`](docs/data_and_methods.md).
@@ -85,6 +96,10 @@ test run also checks the migrations.
 | GET | `/api/v1/recommendations/today[?place=home\|work&at]` | bearer |
 | POST | `/api/v1/location` | bearer + consent |
 | GET | `/api/v1/exposure/current`, `/exposure/history` | bearer + consent |
+| POST / GET | `/api/v1/health/records` | bearer + consent |
+| GET | `/api/v1/risk/current[?at&personalize]` | bearer + consent + disease/severity |
+| GET | `/api/v1/risk/forecast[?at&personalize]` | bearer + consent + disease/severity |
+| GET | `/api/v1/risk/history[?start&end&horizon_hours]` | bearer + consent |
 
 Errors always look like this:
 `{"detail": {"code": "INVALID_TOKEN", "message": "...", "request_id": "..."}}`.
@@ -94,6 +109,6 @@ Errors always look like this:
 - [x] Phase 1: foundation, auth, patient profile
 - [x] Phase 2: AQ and weather ingestion, cleaning, spatial matching
 - [x] Phase 3: 24h AQ forecasting and exposure engine
-- [ ] Phase 4: health data, risk model, calibration, personalisation
+- [x] Phase 4: health data, risk model, calibration, personalisation
 - [ ] Phase 5: explainability, alerts, full API
 - [ ] Phase 6: Flutter app, end-to-end testing, research freeze
