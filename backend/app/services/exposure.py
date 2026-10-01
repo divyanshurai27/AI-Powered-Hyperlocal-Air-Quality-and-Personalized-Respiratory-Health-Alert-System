@@ -13,13 +13,19 @@ from app.core.config import get_settings
 from app.core.errors import AppError, ErrorCode
 from app.domain.exposure import (
     ExposureProfile,
+    HourlyExposure,
     MicroEnvironment,
     build_exposure_profile,
     estimate_hourly_exposure,
 )
 from app.domain.observations import valid_coordinates
 from app.domain.pollutants import Pollutant
-from app.domain.spatial import GeoPoint, LocalEstimate, estimate_local_air_quality
+from app.domain.spatial import (
+    GeoPoint,
+    LocalEstimate,
+    StationReading,
+    estimate_local_air_quality,
+)
 from app.models import LocationRecord, PatientProfile, User
 from app.repositories.audit import AuditRepository
 from app.repositories.environment import ObservationRepository
@@ -40,12 +46,29 @@ class LocationFix:
     source: str = "device"
 
 
-def _hour_grid(end: datetime, hours: int) -> list[datetime]:
+def hour_grid(end: datetime, hours: int) -> list[datetime]:
     """AQ hour ends (:30 UTC, i.e. whole IST hours) covering (end - hours, end]."""
     anchor = end.replace(minute=30, second=0, microsecond=0)
     if anchor > end:
         anchor -= timedelta(hours=1)
     return [anchor - timedelta(hours=i) for i in reversed(range(hours))]
+
+
+def latest_fresh_by_hour(
+    readings: list[StationReading], grid: list[datetime], max_age: timedelta
+) -> dict[datetime, list[StationReading]]:
+    """For each hour, the newest reading per station at or before it and within `max_age`.
+    `readings` must be oldest first. Same inputs `latest_readings` + the freshness rule give."""
+    out = {}
+    for hour in grid:
+        latest: dict[str, StationReading] = {}
+        for r in readings:
+            if r.timestamp > hour:
+                break
+            if hour - r.timestamp <= max_age:
+                latest[r.station_id] = r
+        out[hour] = list(latest.values())
+    return out
 
 
 class ExposureService:
@@ -57,14 +80,7 @@ class ExposureService:
     # --- locations ------------------------------------------------------------------------
 
     def _patient_with_consent(self, user: User) -> PatientProfile:
-        profile = PatientService(self.db).get_own_profile(user)  # ownership check (BR-11)
-        if profile.consent_status != "granted":
-            raise AppError(
-                ErrorCode.CONSENT_REQUIRED,
-                "Location and exposure data need consent. Grant it via PATCH /patients/me.",
-                status.HTTP_403_FORBIDDEN,
-            )
-        return profile
+        return PatientService(self.db).require_consent(user)
 
     def record_locations(self, user: User, fixes: list[LocationFix]) -> int:
         """Store location fixes idempotently: the same (patient, timestamp) is kept once."""
@@ -131,6 +147,9 @@ class ExposureService:
         )
         return list(self.db.scalars(q))
 
+    def has_locations(self, patient_id: uuid.UUID, start: datetime, end: datetime) -> bool:
+        return bool(self._locations(patient_id, start, end))
+
     def get_current_valid_location(
         self, patient_id: uuid.UUID, at: datetime
     ) -> LocationRecord | None:
@@ -140,6 +159,58 @@ class ExposureService:
         return fixes[-1] if fixes else None
 
     # --- exposure -------------------------------------------------------------------------
+
+    def hourly_estimates(
+        self,
+        patient_id: uuid.UUID,
+        pollutant: Pollutant,
+        grid: list[datetime],
+        *,
+        fallback: GeoPoint | None = None,
+    ) -> list[HourlyExposure]:
+        """Exposure estimate for each AQ hour in `grid` (ascending).
+
+        An hour uses the latest fix at or before it if that fix is fresh (BR-07). Without
+        one, the hour is missing, unless a `fallback` point (a saved home) is given: then it
+        is estimated there with an unknown microenvironment, i.e. treated as outdoors.
+        """
+        settings = get_settings()
+        loc_age = timedelta(hours=settings.location_max_age_hours)
+        max_age = timedelta(hours=settings.aq_max_age_hours)
+        fixes = self._locations(patient_id, grid[0] - loc_age, grid[-1])
+        readings = self.observations.readings_between(pollutant, grid[0] - max_age, grid[-1])
+        fresh = latest_fresh_by_hour(readings, grid, max_age)
+
+        estimates = []
+        idx = -1
+        for hour in grid:
+            while idx + 1 < len(fixes) and fixes[idx + 1].timestamp <= hour:
+                idx += 1
+            fix = fixes[idx] if idx >= 0 and hour - fixes[idx].timestamp <= loc_age else None
+            if fix is not None:
+                point, env = (
+                    GeoPoint(fix.latitude, fix.longitude),
+                    MicroEnvironment(fix.activity_context),
+                )
+            elif fallback is not None:
+                point, env = fallback, MicroEnvironment.UNKNOWN
+            else:
+                estimates.append(
+                    estimate_hourly_exposure(hour, pollutant, None, None, location_available=False)
+                )
+                continue
+            local = estimate_local_air_quality(
+                point,
+                fresh[hour],
+                hour,
+                radius_km=settings.spatial_radius_km,
+                max_age=max_age,
+                exact_match_km=settings.spatial_exact_match_km,
+                max_stations=settings.spatial_max_stations,
+            )
+            ambient = local.concentration if isinstance(local, LocalEstimate) else None
+            estimates.append(estimate_hourly_exposure(hour, pollutant, ambient, env))
+        return estimates
 
     def exposure_profile(
         self, user: User, pollutant: Pollutant, at: datetime | None = None, hours: int = 24
@@ -151,36 +222,8 @@ class ExposureService:
                 f"hours must be between 1 and {MAX_EXPOSURE_WINDOW_HOURS}.",
                 status.HTTP_422_UNPROCESSABLE_CONTENT,
             )
-        settings = get_settings()
         end = (at or datetime.now(UTC)).astimezone(UTC)
-        loc_age = timedelta(hours=settings.location_max_age_hours)
-        grid = _hour_grid(end, hours)
-        fixes = self._locations(profile.id, grid[0] - loc_age, end)
-
-        estimates = []
-        idx = -1
-        for hour in grid:
-            while idx + 1 < len(fixes) and fixes[idx + 1].timestamp <= hour:
-                idx += 1
-            fix = fixes[idx] if idx >= 0 and hour - fixes[idx].timestamp <= loc_age else None
-            if fix is None:
-                estimates.append(
-                    estimate_hourly_exposure(hour, pollutant, None, None, location_available=False)
-                )
-                continue
-            local = estimate_local_air_quality(
-                GeoPoint(fix.latitude, fix.longitude),
-                self.observations.latest_readings(pollutant, hour),
-                hour,
-                radius_km=settings.spatial_radius_km,
-                max_age=timedelta(hours=settings.aq_max_age_hours),
-                exact_match_km=settings.spatial_exact_match_km,
-                max_stations=settings.spatial_max_stations,
-            )
-            ambient = local.concentration if isinstance(local, LocalEstimate) else None
-            estimates.append(
-                estimate_hourly_exposure(
-                    hour, pollutant, ambient, MicroEnvironment(fix.activity_context)
-                )
-            )
-        return build_exposure_profile(pollutant, estimates, grid[-1])
+        grid = hour_grid(end, hours)
+        return build_exposure_profile(
+            pollutant, self.hourly_estimates(profile.id, pollutant, grid), grid[-1]
+        )

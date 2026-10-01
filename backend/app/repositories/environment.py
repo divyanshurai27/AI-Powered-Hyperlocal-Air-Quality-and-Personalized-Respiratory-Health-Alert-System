@@ -163,6 +163,36 @@ class ObservationRepository:
             for obs, st in self.db.execute(q).all()
         ]
 
+    def readings_between(
+        self, pollutant: Pollutant, start: datetime, end: datetime
+    ) -> list[StationReading]:
+        """Every reference-monitor reading in (start, end], oldest first. One query for a
+        whole window, instead of `latest_readings` once per hour."""
+        o = AirQualityObservation
+        q = (
+            select(o, Station)
+            .join(Station, Station.id == o.station_id)
+            .where(
+                o.pollutant == pollutant,
+                o.timestamp > start,
+                o.timestamp <= end,
+                Station.is_reference_monitor.is_(True),
+            )
+            .order_by(o.timestamp, o.station_id)
+        )
+        return [
+            StationReading(
+                station_id=obs.station_id,
+                latitude=st.latitude,
+                longitude=st.longitude,
+                concentration=obs.concentration,
+                timestamp=obs.timestamp,
+                quality_flag=QualityFlag(obs.quality_flag),
+                coverage_pct=obs.coverage_pct,
+            )
+            for obs, st in self.db.execute(q).all()
+        ]
+
     def history(
         self, station_id: str, pollutant: Pollutant, start: datetime, end: datetime
     ) -> list[AirQualityObservation]:

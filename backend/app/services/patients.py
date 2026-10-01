@@ -4,6 +4,7 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, ErrorCode
+from app.domain.enums import ConsentStatus
 from app.models import PatientProfile, User
 from app.repositories.audit import AuditRepository
 from app.repositories.patients import PatientRepository
@@ -27,6 +28,17 @@ class PatientService:
                 ErrorCode.NOT_FOUND, "Patient profile not found.", status.HTTP_404_NOT_FOUND
             )
         return authorize_patient_access(self.db, user, profile.id)
+
+    def require_consent(self, user: User) -> PatientProfile:
+        """Own profile (BR-11) with consent granted: needed for location, health and risk."""
+        profile = self.get_own_profile(user)
+        if profile.consent_status != ConsentStatus.GRANTED:
+            raise AppError(
+                ErrorCode.CONSENT_REQUIRED,
+                "Location, health and risk data need consent. Grant it via PATCH /patients/me.",
+                status.HTTP_403_FORBIDDEN,
+            )
+        return profile
 
     def update_own_profile(self, user: User, update: PatientProfileUpdate) -> PatientProfile:
         profile = self.get_own_profile(user)

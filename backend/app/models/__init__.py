@@ -7,6 +7,7 @@ from app.models.environment import (
     Station,
     WeatherObservation,
 )
+from app.models.health import HealthRecord, RiskPrediction
 from app.models.location import LocationRecord
 from app.models.patient import PatientProfile
 from app.models.user import RefreshToken, User
@@ -14,10 +15,12 @@ from app.models.user import RefreshToken, User
 __all__ = [
     "AirQualityObservation",
     "AuditLog",
+    "HealthRecord",
     "IngestionRun",
     "LocationRecord",
     "PatientProfile",
     "RefreshToken",
+    "RiskPrediction",
     "Station",
     "User",
     "WeatherObservation",

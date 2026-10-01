@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     # --- Forecast artifacts (PRD §39) ---
     aq_forecast_artifact_dir: str = "ml/artifacts/aq_forecast"
     aq_forecast_model_version: str = "1.1.0"
+    # Respiratory-risk model (trained on the SYNTHETIC cohort; see app/ml/cohort.py).
+    risk_artifact_dir: str = "ml/artifacts/risk"
+    risk_model_version: str = "1.0.0"
+    # Health records older than this cannot be uploaded (history backfill at onboarding).
+    health_max_backdate_days: int = Field(default=365, gt=0)
 
     @property
     def is_production(self) -> bool:

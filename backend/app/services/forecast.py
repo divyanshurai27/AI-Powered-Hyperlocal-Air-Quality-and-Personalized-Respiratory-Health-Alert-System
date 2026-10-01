@@ -98,7 +98,7 @@ class ForecastService:
         self.db = db
         self.observations = ObservationRepository(db)
 
-    def _weather(self, start: datetime, end: datetime) -> pd.DataFrame:
+    def weather_frame(self, start: datetime, end: datetime) -> pd.DataFrame:
         """Reanalysis where it exists; for later hours, the latest forecast issued ≤ that hour."""
         w = WeatherObservation
         cols = [
@@ -146,7 +146,7 @@ class ForecastService:
         if at - origin.to_pydatetime() > timedelta(hours=get_settings().aq_max_age_hours):
             return None
         lat, lon = station_coordinates(self.db)[station_id]
-        weather = self._weather(start - timedelta(hours=26), origin.to_pydatetime())
+        weather = self.weather_frame(start - timedelta(hours=26), origin.to_pydatetime())
         row = generate_features(frame.loc[:origin], weather, pollutant, lat, lon).loc[[origin]]
         pred = model.predict(row).iloc[0].to_numpy(dtype=float)
         # PRD §12 acceptance gate.
