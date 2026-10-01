@@ -6,6 +6,7 @@ python -m app.cli backfill-weather --start 2025-02-18 --end 2026-09-24
 python -m app.cli fetch-forecast
 python -m app.cli summary
 python -m app.cli probe-datagovin
+python -m app.cli seed-demo-patient --email demo@aerogard.local --password ... --index 3
 """
 
 import argparse
@@ -150,6 +151,40 @@ def cmd_probe_datagovin(_: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_seed_demo_patient(args: argparse.Namespace) -> int:
+    """Demo account from one SYNTHETIC cohort patient (cohort cached by the risk training)."""
+    from pathlib import Path
+
+    import joblib
+
+    from app.core.config import REPO_ROOT
+    from app.services.demo_seed import seed_demo_patient
+
+    path = Path(args.cohort) if args.cohort else None
+    if path is None:
+        cached = sorted(
+            (REPO_ROOT / "data" / "processed").glob("cohort_*.joblib"),
+            key=lambda f: f.stat().st_mtime,
+        )
+        if not cached:
+            print("No cached cohort. Run ml/risk/train_risk_model.py first.")
+            return 1
+        path = cached[-1]
+    cohort = joblib.load(path)  # noqa: S301  (our own cache file)
+    end = (
+        datetime.combine(args.end, time(12, 0), UTC)
+        if args.end
+        else cohort.hours[-1].to_pydatetime()
+    )
+    with get_sessionmaker()() as db:
+        out = seed_demo_patient(db, cohort, args.index, args.email, args.password, end, args.days)
+    print(f"seeded from {path.name}:")
+    for k, v in out.items():
+        print(f"  {k}: {v}")
+    print(f"try: GET /api/v1/risk/forecast?at={end.isoformat()}")
+    return 0
+
+
 def _date(v: str) -> date:
     return date.fromisoformat(v)
 
@@ -173,6 +208,13 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("fetch-forecast", help="store the current 48 h Open-Meteo forecast")
     sub.add_parser("summary", help="rows per station and pollutant")
     sub.add_parser("probe-datagovin", help="print the live CPCB feed without storing it")
+    p = sub.add_parser("seed-demo-patient", help="demo account from a SYNTHETIC cohort patient")
+    p.add_argument("--email", required=True)
+    p.add_argument("--password", required=True)
+    p.add_argument("--index", type=int, default=0, help="cohort patient index")
+    p.add_argument("--days", type=int, default=30)
+    p.add_argument("--end", type=_date, help="last day of the seeded window (default: cohort end)")
+    p.add_argument("--cohort", help="cohort .joblib (default: newest in data/processed)")
 
     args = parser.parse_args(argv)
     handlers = {
@@ -182,6 +224,7 @@ def main(argv: list[str] | None = None) -> int:
         "fetch-forecast": cmd_fetch_forecast,
         "summary": cmd_summary,
         "probe-datagovin": cmd_probe_datagovin,
+        "seed-demo-patient": cmd_seed_demo_patient,
     }
     try:
         return handlers[args.command](args)
