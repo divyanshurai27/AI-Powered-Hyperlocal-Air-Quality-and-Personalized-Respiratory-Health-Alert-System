@@ -349,3 +349,64 @@ Event rates rise with each level, so the levels separate risk. The thresholds (a
 **Calibration version note.** `calibration_v1.0.0` (isotonic) gave AUROC 0.700 and reported exact-zero risks. See §13.
 
 Reports: `docs/experiments/risk_1.0.0.json` (main), `risk_1.0.0_aq0.json`, `_aq2.json`, `_aq4.json`.
+
+## 15. Explanations and alerts (Phase 5)
+
+**Explanation method** (`app/ml/explain.py`, `treeshap_grouped_v1.0.0`)
+- Exact TreeSHAP from LightGBM itself (`pred_contrib=True`), so the API needs no extra dependency. SHAP values are additive, so the served model's attribution is trunk + the patient's disease head: Σφ + base = the model's log-odds exactly (tests check to 1e-9).
+- Platt calibration is linear in log-odds (logit p_cal = a·margin + b) and the personal offset is added in log-odds. Each feature's contribution is therefore reported as a·φ, the base as a·base + b, and the offset as its own "Your own flare-up history" factor. **The parts add up to the probability the patient is shown** (`reconstructed_probability`, checked in tests and on every stored prediction). An isotonic calibrator would not be linear; the explanation would then stay in raw log-odds and say so (`space`).
+- The 38 features are grouped into 14 patient-facing factors (PM2.5 exposure, change in PM2.5, PM10, ozone, weather, time of day/season, condition and severity, age and sex, recent symptoms, reliever use, flare-ups, diary regularity, wearable readings, location-record completeness). Each feature belongs to exactly one factor (tested). A factor's contribution is the sum over its features, so effects inside a factor can cancel.
+- The top 5 factors by |contribution| (≥ 0.02 log-odds) are worded as "… raised / lowered this estimate", never as causes (PRD §17), and carry a note that they are associations learned from a synthetic cohort.
+- **Consistency (BR-09).** The explanation is computed in the same call, from the same model object and the same feature rows that produced the probability. It is stored on the prediction row with the model, feature and calibration versions and a SHA-256 fingerprint of the stored feature vector. `GET /risk/predictions/{id}/explanation` re-checks all four against the row and refuses (409 `EXPLANATION_UNAVAILABLE`) if anything differs.
+
+**Alert engine** (`app/domain/alerts.py`, `alert_policy_v1.0.0`; `app/services/alerts.py`)
+
+Create an alert when all of these hold:
+1. The probability is valid (BR-01).
+2. It is the current estimate (horizon 0). Projected hours never alert: they assume the patient stays put.
+3. The level is High or above (`risk_policy.ALERT_LEVEL`).
+4. The prediction is current: made at most 2 h before the evaluation time (`ALERT_MAX_PREDICTION_AGE_HOURS`).
+5. No alert exists for this prediction (unique `prediction_id`, BR-10).
+6. No *equivalent* alert is live: one for the same patient, not cancelled, whose 24 h window has not ended at the new prediction time, at the same or a higher level. An acknowledged alert still counts, so it is not repeated.
+
+- **Escalation.** A level above every live alert (High → Severe) creates a new alert and cancels the open lower ones (`superseded_by_higher_level`).
+- **Revision.** If the same prediction is recomputed (e.g. after a late diary entry) and falls below High, its own open alert is cancelled (`prediction_revised`).
+- **States:** created → (sent) → acknowledged; cancelled; expired. "Expired" is derived when the alert is read (`expires_at` = end of the prediction's 24 h window), so replaying a past date shows the states as they were then. "Sent" is reserved for the push channel that arrives with the Android app.
+- **Scope.** Only the product configuration alerts: `?personalize=false` is a research view and never raises one.
+- **Contents.** The alert holds the risk level and percentage only, e.g. "Your estimated respiratory risk for the next 24 hours is High (6.1%)." It never includes medication guidance (BR-12). Every alert records its patient, prediction id, model, calibration, risk-policy and alert-policy versions, and time (PRD §19).
+- **Atomicity (PRD §23).** The predictions and the alert decision are written in one transaction, with a row lock on the patient so two concurrent requests cannot both decide that no equivalent alert exists.
+
+**Other Phase 5 endpoints**
+- `GET /air/history`: hourly location-matched AQ for up to 168 h, with the same matching and freshness rules as `/air/current`. Gaps are reported per hour, not filled.
+- `GET /risk/debug`: the PRD §33 prediction trace (input freshness, features, raw → calibrated → personal probability, policy, alert decision, explanation). It is served only when `APP_ENV=development`.
+- Structured logs `risk_generated` and `alert_evaluated` carry the request's correlation id (PRD §34). Probabilities stay out of the logs and the audit trail.
+
+**Global importance** (`ml/explainability/global_shap.py`). Mean |SHAP| per feature and per factor in calibrated log-odds, for validation, test (seen) and test (unseen), by disease. It explains the saved artifact on the exact training matrix and refuses to run if the matrix fingerprint differs. Output: `docs/experiments/risk_1.0.0_shap.json`.
+
+## 16. Results: global SHAP importance of `risk_v1.0.0` (SYNTHETIC labels, run 2026-10-21)
+
+Matrix `risk_86916fe8fac8bc65` (the training matrix, verified by fingerprint). Mean |SHAP| per factor in calibrated log-odds, test on seen patients (n = 84,908). The additivity check (base + Σ contributions vs the calibrated probability) holds to ≤ 1.1e-15 in every part.
+
+| Factor | Mean \|SHAP\| | Share |
+|---|---|---|
+| Recent symptom scores | 0.488 | 54.2% |
+| Recent flare-ups | 0.123 | 13.7% |
+| Wearable readings (SpO₂, heart rate, steps, sleep) | 0.049 | 5.5% |
+| Estimated PM2.5 exposure | 0.035 | 3.9% |
+| Age and sex | 0.034 | 3.8% |
+| Condition and severity | 0.033 | 3.7% |
+| Estimated PM10 exposure | 0.030 | 3.3% |
+| Estimated ozone exposure | 0.029 | 3.2% |
+| Time of day and season | 0.027 | 3.0% |
+| Recent reliever-inhaler use | 0.019 | 2.1% |
+| Weather | 0.017 | 1.9% |
+| Recent change in PM2.5 exposure | 0.010 | 1.1% |
+| Diary regularity | 0.005 | 0.5% |
+| Location-record completeness | 0.002 | 0.2% |
+
+- **The symptom diary dominates**: symptoms + flare-ups ≈ 68% of attribution in every part (validation, test seen, test unseen) and for both diseases. The top individual features are the 3-day and last symptom scores, the 7-day mean, and days since the last event. This matches the no-health ablation (AUROC 0.708 → 0.583, §14).
+- **All exposure factors together get 11.7% of attribution on test (15.5% on validation), yet removing them does not lower AUROC (§14).** The two findings are consistent. SHAP shows what the trained model *uses*. The ablation shows what it *needs*: exposure is correlated with season and with the simulated symptom response, so a model trained without it reaches the same discrimination through those features. The paper should report SHAP as model behaviour, not as evidence that pollution adds predictive value.
+- Exposure attribution is lower on the monsoon test period (11.7%) than on Feb–Apr validation (15.5%), consistent with the low, narrow test-period exposure range described in §14.
+- Importances are near-identical for seen and unseen patients and for asthma and COPD (COPD's exposure share is 0.2–1.2 points higher).
+
+These describe what the simulated cohort encoded, not clinical knowledge.

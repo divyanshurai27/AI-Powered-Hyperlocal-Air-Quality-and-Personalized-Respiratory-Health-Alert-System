@@ -55,6 +55,7 @@ cd ..
 python ml/forecasting/train_aq_forecast.py --pollutant pm25 --version 1.1.0
 python ml/risk/train_risk_model.py                                  # synthetic cohort + risk model
 python ml/risk/train_risk_model.py --aq-effect-scale 0 --no-save    # negative control
+python ml/explainability/global_shap.py                            # global SHAP importance
 ```
 
 The risk model is trained on a **synthetic** patient cohort simulated inside the real Bengaluru
@@ -91,6 +92,7 @@ test run also checks the migrations.
 | GET / PATCH | `/api/v1/patients/me` | bearer |
 | GET | `/api/v1/air/current?lat&lon[&at]` | bearer |
 | GET | `/api/v1/air/forecast?lat&lon&pollutant[&at]` | bearer |
+| GET | `/api/v1/air/history?lat&lon&pollutant[&hours&at]` | bearer |
 | GET | `/api/v1/air/stations` | bearer |
 | GET | `/api/v1/air/map?pollutant[&at]` | bearer |
 | GET | `/api/v1/recommendations/today[?place=home\|work&at]` | bearer |
@@ -100,6 +102,14 @@ test run also checks the migrations.
 | GET | `/api/v1/risk/current[?at&personalize]` | bearer + consent + disease/severity |
 | GET | `/api/v1/risk/forecast[?at&personalize]` | bearer + consent + disease/severity |
 | GET | `/api/v1/risk/history[?start&end&horizon_hours]` | bearer + consent |
+| GET | `/api/v1/risk/predictions/{id}/explanation` | bearer + consent |
+| GET | `/api/v1/alerts[?active&at&limit]` | bearer + consent |
+| POST | `/api/v1/alerts/{id}/acknowledge` | bearer + consent |
+| GET | `/api/v1/risk/debug[?at]` | bearer, `APP_ENV=development` only |
+
+`/risk/current` and `/risk/forecast` return the estimate's SHAP explanation (factors that
+add up to the shown probability) and the alert decision. An alert is raised once when the
+current estimate reaches High; it contains only the level and percentage.
 
 Errors always look like this:
 `{"detail": {"code": "INVALID_TOKEN", "message": "...", "request_id": "..."}}`.
@@ -110,5 +120,5 @@ Errors always look like this:
 - [x] Phase 2: AQ and weather ingestion, cleaning, spatial matching
 - [x] Phase 3: 24h AQ forecasting and exposure engine
 - [x] Phase 4: health data, risk model, calibration, personalisation
-- [ ] Phase 5: explainability, alerts, full API
+- [x] Phase 5: explainability, alerts, full API
 - [ ] Phase 6: Flutter app, end-to-end testing, research freeze
