@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     # Respiratory-risk model (trained on the SYNTHETIC cohort; see app/ml/cohort.py).
     risk_artifact_dir: str = "ml/artifacts/risk"
     risk_model_version: str = "1.0.0"
+    # PRD §19 "prediction is current": older predictions never raise a new alert.
+    alert_max_prediction_age_hours: float = Field(default=2.0, gt=0)
     # Health records older than this cannot be uploaded (history backfill at onboarding).
     health_max_backdate_days: int = Field(default=365, gt=0)
 

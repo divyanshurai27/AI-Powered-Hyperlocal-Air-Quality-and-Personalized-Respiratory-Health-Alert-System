@@ -166,3 +166,29 @@ input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color:
 .place .k { font-weight: 600; font-size: 13px; min-width: 42px; }
 .small-btn { padding: 5px 10px; font-size: 13px; margin-left: auto; }
 @media (max-width: 640px) { .places { grid-template-columns: 1fr; } }
+
+/* personal risk + alerts */
+.risk-body { display: grid; gap: 12px; }
+.risk-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.rlevel { padding: 8px 16px; border-radius: 999px; font-weight: 700; color: #fff; font-size: 15px; background: #9aa6a1; }
+.rlevel.Low { background: var(--good); }
+.rlevel.Moderate { background: #c99a00; }
+.rlevel.High { background: var(--poor); }
+.rlevel.Severe { background: var(--severe); }
+.risk-pct { font-size: 34px; font-weight: 700; letter-spacing: -.02em; line-height: 1; }
+.risk-pct small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); letter-spacing: 0; margin-top: 4px; }
+.factors { display: grid; gap: 7px; }
+.factor { display: grid; grid-template-columns: minmax(0, 1fr) 90px; gap: 10px; align-items: center; font-size: 13px; }
+.factor .track { position: relative; height: 8px; background: var(--bg); border-radius: 4px; margin-top: 3px; }
+.factor .track::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--line); }
+.factor .fill { position: absolute; top: 0; bottom: 0; border-radius: 4px; }
+.factor .fill.up { left: 50%; background: var(--poor); }
+.factor .fill.down { right: 50%; background: var(--accent); }
+.factor .tag { font-size: 11px; color: var(--muted); }
+.alerts-head { display: flex; align-items: baseline; justify-content: space-between; margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+.alerts-head h3 { margin: 0; font-size: 15px; }
+.alerts-list { display: grid; gap: 8px; margin-top: 8px; }
+.alert-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; background: var(--bg); border-radius: 12px; padding: 10px 12px; font-size: 13px; }
+.alert-item .when { font-size: 12px; color: var(--muted); }
+.alert-item.open { border-left: 4px solid var(--poor); }
+.alert-item .state { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }

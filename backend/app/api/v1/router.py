@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.routes import (
     air,
+    alerts,
     auth,
     exposure,
     health,
@@ -20,3 +21,4 @@ api_router.include_router(exposure.router)
 api_router.include_router(recommendations.router)
 api_router.include_router(health_records.router)
 api_router.include_router(risk.router)
+api_router.include_router(alerts.router)

@@ -15,6 +15,10 @@ after T is known), so a horizon answers "if you stay where you are and nothing e
 changes, what would your 24 h risk look like at T+h". Horizons the AQ forecast does not
 cover are returned as unavailable, never filled.
 
+Every estimate carries a TreeSHAP explanation built from the same model and feature vector
+(app/ml/explain.py, BR-09). The current estimate (horizon 0) is then put through the alert
+engine in the same transaction that stores it (app/services/alerts.py, PRD §23).
+
 The model was trained on a SYNTHETIC cohort (app/ml/cohort.py); outputs are research
 estimates, never medical advice or medication guidance (BR-12).
 """
@@ -34,7 +38,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import REPO_ROOT, get_settings
 from app.core.errors import AppError, ErrorCode
-from app.core.logging import get_logger
+from app.core.logging import get_logger, request_id_var
+from app.domain.alerts import AlertDecision, PredictionForAlert
 from app.domain.enums import DiseaseType, RiskLevel
 from app.domain.exposure import MIN_WINDOW_COVERAGE, MicroEnvironment, microenvironment_factor
 from app.domain.pollutants import Pollutant
@@ -49,6 +54,7 @@ from app.domain.risk_policy import (
 )
 from app.domain.spatial import GeoPoint, Unavailable
 from app.ml.calibration import DiseaseCalibrators
+from app.ml.explain import EXPLANATION_VERSION, build_explanation, explain_margin, input_fingerprint
 from app.ml.risk import (
     RiskArtifactError,
     RiskArtifactMetadata,
@@ -62,9 +68,10 @@ from app.ml.risk_features import (
     build_risk_features,
     personal_history,
 )
-from app.models import PatientProfile, User
+from app.models import Alert, PatientProfile, RiskPrediction, User
 from app.repositories.audit import AuditRepository
 from app.repositories.health import RiskPredictionRepository
+from app.services.alerts import AlertService
 from app.services.exposure import ExposureService, hour_grid
 from app.services.forecast import ForecastService
 from app.services.health import HealthService
@@ -106,11 +113,14 @@ class RiskEstimate:
     target_window_start: datetime
     target_window_end: datetime
     raw_probability: float
+    calibrated_probability: float  # before the personal offset
     risk_probability: float
     risk_level: RiskLevel
     confidence: str
     data_quality: dict[str, Any]
     features: dict[str, float | None]
+    explanation: dict[str, Any] | None = None
+    prediction_id: uuid.UUID | None = None  # set once stored
 
 
 @dataclass
@@ -137,6 +147,9 @@ class RiskResult:
     horizons: list[HorizonResult] = field(default_factory=list)
     forecast_versions: dict[str, str] = field(default_factory=dict)
     pollutants_skipped: dict[str, str] = field(default_factory=dict)
+    alert_decision: AlertDecision = AlertDecision.NOT_EVALUATED
+    alert: Alert | None = None
+    trace: dict[str, Any] = field(default_factory=dict)  # freshness, for the debug view
 
     @property
     def thresholds(self) -> dict[str, float]:
@@ -158,6 +171,7 @@ class _Context:
     exposure: pd.DataFrame
     weather: pd.DataFrame
     health: pd.DataFrame
+    location_time: datetime | None = None
 
 
 class RiskService:
@@ -227,7 +241,17 @@ class RiskService:
         )
         weather = ForecastService(self.db).weather_frame(origin - timedelta(hours=30), origin)
         health = HealthService(self.db).history_frame(profile.id, origin)
-        return _Context(profile, origin, point, env, source, exposure, weather, health)
+        return _Context(
+            profile,
+            origin,
+            point,
+            env,
+            source,
+            exposure,
+            weather,
+            health,
+            fix.timestamp if fix is not None else None,
+        )
 
     # --- prediction ----------------------------------------------------------------------
 
@@ -268,15 +292,19 @@ class RiskService:
         baseline: PersonalBaseline | None,
         projected: bool,
     ) -> list[RiskEstimate]:
-        model, calibrators, _ = get_risk_model()
-        disease = np.full(len(X), str(ctx.profile.disease_type))
+        model, calibrators, meta = get_risk_model()
+        disease_type = str(ctx.profile.disease_type)
+        disease = np.full(len(X), disease_type)
         raw = model.predict_proba(X[RISK_FEATURE_NAMES], disease)
         calibrated = calibrators.calibrate(raw, disease)
+        # BR-09: explained from the same model and the same rows that were just scored.
+        contributions, bases = explain_margin(model, X[RISK_FEATURE_NAMES], disease)
         out = []
         for i, (t, row) in enumerate(X.iterrows()):
             p = apply_personal_offset(float(calibrated[i]), baseline)
             confidence, quality = self._quality(row, ctx.location_source, projected)
             horizon = int(round((t - pd.Timestamp(ctx.origin)).total_seconds() / 3600))
+            features = {k: _clean(v) for k, v in row[RISK_FEATURE_NAMES].items()}
             out.append(
                 RiskEstimate(
                     horizon_hours=horizon,
@@ -284,11 +312,24 @@ class RiskService:
                     target_window_start=t.to_pydatetime(),
                     target_window_end=(t + pd.Timedelta(hours=24)).to_pydatetime(),
                     raw_probability=float(np.clip(raw[i], 0, 1)),
+                    calibrated_probability=float(calibrated[i]),
                     risk_probability=p,
-                    risk_level=classify_risk(p, str(ctx.profile.disease_type)),
+                    risk_level=classify_risk(p, disease_type),
                     confidence=confidence,
                     data_quality=quality,
-                    features={k: _clean(v) for k, v in row[RISK_FEATURE_NAMES].items()},
+                    features=features,
+                    explanation=build_explanation(
+                        contributions=contributions[i],
+                        base=float(bases[i]),
+                        feature_names=model.feature_names,
+                        features=features,
+                        calibrator=calibrators.by_disease[disease_type],
+                        personal_offset=baseline.offset if baseline else None,
+                        model_version=meta.model_version,
+                        feature_version=meta.feature_version,
+                        calibration_version=calibrators.version,
+                        risk_probability=p,
+                    ),
                 )
             )
         return out
@@ -359,7 +400,10 @@ class RiskService:
         forecast: bool = False,
         personalize: bool = True,
     ) -> RiskResult:
+        """generate_patient_risk_forecast (PRD §24). Alerts are evaluated only for the product
+        configuration (personalize=True); the unpersonalised research view never alerts."""
         _, calibrators, meta = get_risk_model()  # fail fast with MODEL_NOT_AVAILABLE
+        evaluated_at = (at or datetime.now(UTC)).astimezone(UTC)
         ctx = self._context(user, at)
         if forecast and ctx.point is None:
             raise AppError(
@@ -388,6 +432,7 @@ class RiskService:
             baseline=baseline,
             location_source=ctx.location_source,
             current=current,
+            trace=self._freshness(ctx),
         )
         if forecast:
             X, available, versions, skipped, missing = self._projected_horizons(ctx, X0)
@@ -401,10 +446,37 @@ class RiskService:
                 HorizonResult(h, ctx.origin + timedelta(hours=h), estimates.get(h), missing.get(h))
                 for h in HORIZONS
             ]
-        self._save(user, ctx.profile.id, result)
+        self._save(user, ctx.profile.id, result, evaluated_at if personalize else None)
         return result
 
-    def _save(self, user: User, patient_id: uuid.UUID, result: RiskResult) -> None:
+    @staticmethod
+    def _freshness(ctx: _Context) -> dict[str, Any]:
+        """PRD §33 debug fields: how old each input was at the prediction time."""
+
+        def minutes(t: datetime | pd.Timestamp | None) -> float | None:
+            if t is None or pd.isna(t):
+                return None
+            return round((pd.Timestamp(ctx.origin) - pd.Timestamp(t)).total_seconds() / 60, 1)
+
+        pm25 = ctx.exposure["pm25"].dropna() if "pm25" in ctx.exposure else pd.Series()
+        return {
+            "location_source": ctx.location_source,
+            "location_age_minutes": minutes(ctx.location_time),
+            "latest_pm25_exposure_age_minutes": minutes(pm25.index.max() if len(pm25) else None),
+            "latest_weather_age_minutes": minutes(
+                ctx.weather.index.max() if len(ctx.weather) else None
+            ),
+            "health_records_used": int(len(ctx.health)),
+        }
+
+    def _save(
+        self,
+        user: User,
+        patient_id: uuid.UUID,
+        result: RiskResult,
+        alert_clock: datetime | None,
+    ) -> None:
+        """Store every estimate and evaluate the alert in ONE transaction (PRD §23)."""
         estimates = [result.current] + [h.estimate for h in result.horizons if h.estimate]
         rows = [
             {
@@ -427,19 +499,114 @@ class RiskService:
                 "confidence": e.confidence,
                 "data_quality": e.data_quality,
                 "features": e.features,
+                "explanation": e.explanation,
             }
             for e in estimates
         ]
-        self.predictions.upsert_many(rows)
+        ids = self.predictions.upsert_many(rows)
+        for e in estimates:
+            e.prediction_id = ids[e.horizon_hours]
+        logger.info(
+            "risk_generated",
+            extra={
+                "patient_id": str(patient_id),
+                "prediction_time": result.origin.isoformat(),
+                "predictions": len(rows),
+                "model_version": result.model_version,
+            },
+        )
+        if alert_clock is not None:
+            cur = result.current
+            result.alert_decision, result.alert = AlertService(self.db).evaluate(
+                patient_id,
+                PredictionForAlert(
+                    prediction_id=cur.prediction_id,
+                    horizon_hours=cur.horizon_hours,
+                    risk_probability=cur.risk_probability,
+                    risk_level=cur.risk_level,
+                    prediction_time=cur.prediction_time,
+                    target_window_end=cur.target_window_end,
+                ),
+                {
+                    "model_version": result.model_version,
+                    "calibration_version": result.calibration_version,
+                    "policy_version": result.policy_version,
+                },
+                alert_clock,
+            )
         # Levels and counts only; probabilities and features stay in the patient-scoped table.
         self.audit.write(
             "risk_assessed",
             user_id=user.id,
             resource_type="patient",
             resource_id=patient_id,
-            details={"predictions": len(rows), "model_version": result.model_version},
+            details={
+                "predictions": len(rows),
+                "model_version": result.model_version,
+                "alert_decision": result.alert_decision.value,
+            },
         )
         self.db.commit()
+
+    def explanation(self, user: User, prediction_id: uuid.UUID) -> RiskPrediction:
+        """A stored prediction with its explanation, after checking the explanation still
+        matches the row's model, calibration and input vector (BR-09)."""
+        profile = PatientService(self.db).require_consent(user)
+        row = self.predictions.get_for_patient(prediction_id, profile.id)
+        if row is None:
+            self.audit.write(
+                "prediction_access_denied",
+                user_id=user.id,
+                resource_type="risk_prediction",
+                resource_id=prediction_id,
+                outcome="failure",
+            )
+            self.db.commit()
+            raise AppError(ErrorCode.NOT_FOUND, "Prediction not found.", status.HTTP_404_NOT_FOUND)
+        exp = row.explanation
+        consistent = (
+            exp is not None
+            and exp.get("version") == EXPLANATION_VERSION
+            and exp.get("model_version") == row.model_version
+            and exp.get("feature_version") == row.feature_version
+            and exp.get("calibration_version") == row.calibration_version
+            and exp.get("input_fingerprint") == input_fingerprint(row.features)
+        )
+        if not consistent:
+            raise AppError(
+                ErrorCode.EXPLANATION_UNAVAILABLE,
+                "No explanation matching this prediction's model and inputs is stored.",
+                status.HTTP_409_CONFLICT,
+            )
+        return row
+
+    def debug_trace(self, user: User, at: datetime | None = None) -> dict[str, Any]:
+        """PRD §33 prediction trace. Development only: the route refuses in other envs."""
+        r = self.assess(user, at)
+        cur = r.current
+        return {
+            "request_id": request_id_var.get(),
+            "patient_id": str(PatientService(self.db).get_own_profile(user).id),
+            "prediction_id": str(cur.prediction_id),
+            "prediction_time": r.origin.isoformat(),
+            "freshness": r.trace,
+            "feature_version": r.feature_version,
+            "features": cur.features,
+            "model_version": r.model_version,
+            "raw_probability": cur.raw_probability,
+            "calibration_version": r.calibration_version,
+            "calibrated_probability": cur.calibrated_probability,
+            "personal_offset": r.baseline.offset if r.baseline else None,
+            "risk_probability": cur.risk_probability,
+            "policy_version": r.policy_version,
+            "thresholds": r.thresholds,
+            "risk_level": cur.risk_level.value,
+            "confidence": cur.confidence,
+            "data_quality": cur.data_quality,
+            "alert_decision": r.alert_decision.value,
+            "alert_id": str(r.alert.id) if r.alert else None,
+            "explanation": cur.explanation,
+        }
 
     def history(
         self,

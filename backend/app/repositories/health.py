@@ -50,11 +50,12 @@ class RiskPredictionRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def upsert_many(self, rows: list[dict[str, Any]]) -> None:
+    def upsert_many(self, rows: list[dict[str, Any]]) -> dict[int, uuid.UUID]:
         """BR-10: one row per prediction identity. Recomputing the same prediction (e.g. after
-        a late diary entry) replaces it instead of adding a duplicate."""
+        a late diary entry) replaces it instead of adding a duplicate, and keeps its id.
+        Returns {horizon_hours: id} of the stored rows."""
         if not rows:
-            return
+            return {}
         stmt = insert(RiskPrediction).values(rows)
         keep = {
             "id",
@@ -70,8 +71,18 @@ class RiskPredictionRepository:
         stmt = stmt.on_conflict_do_update(
             constraint="uq_risk_predictions_identity",
             set_={c: stmt.excluded[c] for c in rows[0] if c not in keep},
+        ).returning(RiskPrediction.horizon_hours, RiskPrediction.id)
+        return {h: i for h, i in self.db.execute(stmt).all()}
+
+    def get_for_patient(
+        self, prediction_id: uuid.UUID, patient_id: uuid.UUID
+    ) -> RiskPrediction | None:
+        """None both when the prediction doesn't exist and when it belongs to someone else."""
+        return self.db.scalar(
+            select(RiskPrediction).where(
+                RiskPrediction.id == prediction_id, RiskPrediction.patient_id == patient_id
+            )
         )
-        self.db.execute(stmt)
 
     def history(
         self,

@@ -3,10 +3,12 @@ from datetime import datetime
 from fastapi import APIRouter, Query
 
 from app.api.deps import CurrentUser, DbSession
-from app.domain.pollutants import Pollutant
+from app.domain.pollutants import CANONICAL_UNIT, Pollutant
 from app.domain.spatial import LocalEstimate, Unavailable
 from app.repositories.environment import StationRepository
 from app.schemas.air import (
+    AirHistoryHour,
+    AirHistoryResponse,
     CityMapResponse,
     CurrentAirResponse,
     ForecastHour,
@@ -80,6 +82,44 @@ def current_air(
                 )
             )
     return CurrentAirResponse(latitude=lat, longitude=lon, at=ctx.at, pollutants=items)
+
+
+@router.get(
+    "/history",
+    response_model=AirHistoryResponse,
+    responses={422: {"model": ErrorResponse}},
+    summary="Hourly location-matched air-quality history",
+)
+def air_history(
+    _: CurrentUser,
+    db: DbSession,
+    lat: float = Query(..., description="Latitude, WGS84"),
+    lon: float = Query(..., description="Longitude, WGS84"),
+    pollutant: Pollutant = Pollutant.PM25,
+    hours: int = Query(24, ge=1, le=168),
+    at: datetime | None = Query(None, description="Last hour of the window; defaults to now"),
+) -> AirHistoryResponse:
+    """One entry per AQ hour, oldest first, using the same station matching and freshness
+    rules as `/air/current`. Hours without fresh nearby data are `available: false`."""
+    rows = AirService(db).history(lat, lon, pollutant, at, hours)
+    return AirHistoryResponse(
+        latitude=lat,
+        longitude=lon,
+        pollutant=pollutant.value,
+        unit=CANONICAL_UNIT,
+        hours=[
+            AirHistoryHour(
+                hour=hour,
+                available=True,
+                concentration=r.concentration,
+                method=r.method,
+                nearest_station_km=r.nearest_distance_km,
+            )
+            if isinstance(r, LocalEstimate)
+            else AirHistoryHour(hour=hour, available=False, unavailable_reason=r.reason.value)
+            for hour, r in rows
+        ],
+    )
 
 
 @router.get("/stations", response_model=list[StationOut], summary="Known monitoring stations")

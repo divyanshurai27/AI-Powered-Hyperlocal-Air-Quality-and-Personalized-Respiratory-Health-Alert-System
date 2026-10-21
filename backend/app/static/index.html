@@ -130,11 +130,12 @@
         <p class="fineprint">Exposure = outdoor air at your location × a factor for where you are (home 0.8, office 0.6, traffic 1.3 for PM<sub>2.5</sub>). An estimate, not a personal sensor. Hours without a recent location stay empty.</p>
       </section>
 
-      <!-- Risk (Phase 4) -->
+      <!-- Risk (Phase 4–5) -->
       <section class="card risk-card">
-        <div class="card-head"><h2>Personal respiratory risk</h2><span class="pill">Phase 4</span></div>
-        <p>Next: a calibrated probability of an asthma or COPD flare in the next 24 hours, from your exposure, the forecast and your health profile, shown as Low / Moderate / High / Severe with the main contributing factors.</p>
-        <p class="muted small">Not shown yet on purpose: the model is still being built, and AeroGard never displays placeholder risk numbers.</p>
+        <div class="card-head"><h2>Personal respiratory risk</h2><span class="pill">Next 24 h</span></div>
+        <div id="risk-body" class="risk-body"><span class="muted">Loading…</span></div>
+        <div class="alerts-head"><h3>Alerts</h3><span id="alerts-count" class="muted small"></span></div>
+        <div id="alerts-list" class="alerts-list"></div>
       </section>
 
       <!-- Profile -->

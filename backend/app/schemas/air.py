@@ -41,6 +41,24 @@ class CurrentAirResponse(BaseModel):
     pollutants: list[PollutantEstimate]
 
 
+class AirHistoryHour(BaseModel):
+    hour: datetime
+    available: bool
+    concentration: float | None = None
+    method: str | None = None
+    nearest_station_km: float | None = None
+    unavailable_reason: str | None = None
+
+
+class AirHistoryResponse(BaseModel):
+    latitude: float
+    longitude: float
+    pollutant: str
+    unit: str
+    source_note: str = CurrentAirResponse.model_fields["source_note"].default
+    hours: list[AirHistoryHour]
+
+
 class StationOut(BaseModel):
     id: str
     name: str

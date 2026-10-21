@@ -1,13 +1,20 @@
+import uuid
 from datetime import datetime
+from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, status
 
 from app.api.deps import CurrentUser, DbSession
+from app.core.config import get_settings
+from app.core.errors import AppError, ErrorCode
 from app.schemas.common import ErrorResponse
 from app.schemas.risk import (
+    AlertSummaryOut,
+    ExplanationOut,
     PersonalizationOut,
     RiskCurrentOut,
     RiskEstimateOut,
+    RiskExplanationOut,
     RiskForecastOut,
     RiskHistoryItem,
     RiskHistoryOut,
@@ -32,6 +39,7 @@ PersonalizeQuery = Query(True, description="Apply the bounded personal-history o
 
 def _estimate(e: RiskEstimate) -> RiskEstimateOut:
     return RiskEstimateOut(
+        prediction_id=e.prediction_id,
         horizon_hours=e.horizon_hours,
         target_window_start=e.target_window_start,
         target_window_end=e.target_window_end,
@@ -66,6 +74,16 @@ def _header(r: RiskResult) -> dict:
         else None,
         "location_source": r.location_source,
         "current": _estimate(r.current),
+        "explanation": ExplanationOut(**r.current.explanation) if r.current.explanation else None,
+        "alert_decision": r.alert_decision.value,
+        "alert": AlertSummaryOut(
+            id=r.alert.id,
+            state=r.alert.state.value,
+            risk_level=r.alert.risk_level.value,
+            message=r.alert.message,
+        )
+        if r.alert
+        else None,
     }
 
 
@@ -122,3 +140,33 @@ def risk_history(
 ) -> RiskHistoryOut:
     rows = RiskService(db).history(user, start, end, horizon_hours, limit)
     return RiskHistoryOut(predictions=[RiskHistoryItem.model_validate(r) for r in rows])
+
+
+@router.get(
+    "/predictions/{prediction_id}/explanation",
+    response_model=RiskExplanationOut,
+    responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
+    summary="Why a stored estimate came out as it did",
+)
+def risk_explanation(
+    prediction_id: uuid.UUID, user: CurrentUser, db: DbSession
+) -> RiskExplanationOut:
+    """The SHAP explanation stored with the prediction, verified against that prediction's
+    model, calibration and input vector (BR-09). Another patient's id is a 404."""
+    row = RiskService(db).explanation(user, prediction_id)
+    return RiskExplanationOut(
+        prediction_id=row.id,
+        prediction_time=row.prediction_time,
+        horizon_hours=row.horizon_hours,
+        risk_probability=row.risk_probability,
+        risk_level=row.risk_level.value,
+        explanation=ExplanationOut(**row.explanation),
+    )
+
+
+@router.get("/debug", include_in_schema=False)
+def risk_debug(user: CurrentUser, db: DbSession, at: datetime | None = AtQuery) -> dict[str, Any]:
+    """PRD §33 prediction trace: development environment only."""
+    if not get_settings().debug_enabled:
+        raise AppError(ErrorCode.NOT_FOUND, "Not found.", status.HTTP_404_NOT_FOUND)
+    return RiskService(db).debug_trace(user, at)

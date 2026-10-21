@@ -172,7 +172,7 @@ async function startApp() {
 
 async function refreshAll() {
   updateBanner();
-  const jobs = [loadToday(), loadCurrent(), loadForecast(), loadExposure()];
+  const jobs = [loadToday(), loadCurrent(), loadForecast(), loadExposure(), loadRisk()];
   if (state.mapMode === "city") jobs.push(loadCity());
   await Promise.all(jobs);
 }
@@ -274,7 +274,7 @@ async function loadToday() {
       <div class="notes">
         <span><b>Why:</b> ${PLAIN[d.worst_pollutant]} is forecast to reach <b>${d.worst_category}</b> on India’s NAQI. ${escapeHtml(d.health_note)}</span>
         <span><b>For you:</b> ${escapeHtml(d.personalisation_note)}${d.disease_type ? "" : " Add your condition in My profile for personalised thresholds."}</span>
-        <span>Rule-based air-quality guidance from the ${used} forecast (${d.policy_version}). The personal risk model comes in Phase 4. ${escapeHtml(d.disclaimer)}</span>
+        <span>Rule-based air-quality guidance from the ${used} forecast (${d.policy_version}). Your personal risk estimate is in its own card. ${escapeHtml(d.disclaimer)}</span>
       </div>`;
   } catch (err) {
     body.innerHTML = `<span class="muted">${escapeHtml(err.message)}</span>`;
@@ -649,6 +649,98 @@ function drawExposure(hours) {
   });
 }
 
+/* ---------------- personal risk + alerts ---------------- */
+const RISK_HELP = {
+  PROFILE_INCOMPLETE: "Add your condition and severity in My profile to see your personal risk.",
+  CONSENT_REQUIRED: "Tick the consent box in My profile to see your personal risk.",
+  MODEL_NOT_AVAILABLE: "The risk model is not installed on this server.",
+};
+const QUALITY_TEXT = {
+  incomplete_recent_exposure: "your location record for the last 24 h is incomplete",
+  no_symptom_diary_in_7_days: "no symptom diary in the last 7 days",
+  no_location: "no location or saved home",
+  weather_unavailable: "weather data unavailable",
+};
+const isOpenAlert = (a) => a.state === "created" || a.state === "sent";
+
+async function loadRisk() {
+  const body = $("#risk-body");
+  body.innerHTML = `<span class="muted">Estimating your risk…</span>`;
+  try {
+    renderRisk(await api("/risk/current", { params: { at: atParam() } }));
+  } catch (err) {
+    body.innerHTML = `<span class="muted">${escapeHtml(RISK_HELP[err.code] || err.message)}</span>`;
+  }
+  loadAlerts();
+}
+
+function renderRisk(r) {
+  const cur = r.current;
+  const pct = (100 * cur.risk_probability).toFixed(cur.risk_probability < 0.1 ? 1 : 0);
+  const exp = r.explanation;
+  const top = exp ? exp.top_factors : [];
+  const scale = Math.max(0.05, ...top.map((f) => Math.abs(f.contribution)));
+  const factors = top
+    .map((f) => {
+      const w = Math.min(50, (50 * Math.abs(f.contribution)) / scale);
+      const dir = f.contribution > 0 ? "up" : "down";
+      const tag = { raises: "raised it", lowers: "lowered it" }[f.direction] || "little effect";
+      const missing = f.recently_missing ? ' <span class="tag">(not recorded recently)</span>' : "";
+      return `<div class="factor"><div>${escapeHtml(f.label)}${missing}
+        <div class="track"><div class="fill ${dir}" style="width:${w}%"></div></div></div><span class="tag">${tag}</span></div>`;
+    })
+    .join("");
+  const reasons = cur.data_quality.reasons.filter((x) => QUALITY_TEXT[x]).map((x) => QUALITY_TEXT[x]);
+  const low = cur.confidence === "low" && reasons.length ? `<span><b>Lower confidence:</b> ${reasons.join("; ")}.</span>` : "";
+  const alert = r.alert ? `<span><b>Alert:</b> ${escapeHtml(r.alert.message)}</span>` : "";
+  const versions = [r.model_version, r.calibration_version, r.policy_version, r.personalization && r.personalization.version].filter(Boolean);
+  $("#risk-body").innerHTML = `
+    <div class="risk-top">
+      <span class="rlevel ${cur.risk_level}">${cur.risk_level}</span>
+      <span class="risk-pct">${pct}%<small>estimated chance of a flare-up starting in the next 24 h</small></span>
+    </div>
+    ${factors ? `<div><div class="small muted" style="margin-bottom:6px">Main contributing factors</div><div class="factors">${factors}</div></div>` : ""}
+    <div class="notes">
+      ${alert}${low}
+      ${exp ? `<span>${escapeHtml(exp.note)}</span>` : ""}
+      <span>${escapeHtml(r.disclaimer)}</span>
+      <span>${versions.map(escapeHtml).join(" · ")}</span>
+    </div>`;
+}
+
+async function loadAlerts() {
+  const list = $("#alerts-list");
+  try {
+    const d = await api("/alerts", { params: { at: atParam(), limit: 5 } });
+    const open = d.alerts.filter(isOpenAlert).length;
+    $("#alerts-count").textContent = d.alerts.length ? `${open} awaiting acknowledgement` : "";
+    list.innerHTML = d.alerts.length
+      ? d.alerts
+          .map((a) => {
+            const action = isOpenAlert(a)
+              ? `<button class="btn ghost small-btn" data-ack="${a.id}">Acknowledge</button>`
+              : `<span class="state">${escapeHtml(a.state)}</span>`;
+            return `<div class="alert-item ${isOpenAlert(a) ? "open" : ""}"><div>${escapeHtml(a.message)}
+              <div class="when">${fmtTime(a.prediction_time)} IST · until ${fmtTime(a.expires_at)}</div></div>${action}</div>`;
+          })
+          .join("")
+      : `<span class="muted small">No alerts. One alert is raised when your estimated risk reaches High.</span>`;
+    list.querySelectorAll("[data-ack]").forEach((b) => b.addEventListener("click", () => acknowledge(b.dataset.ack)));
+  } catch (err) {
+    $("#alerts-count").textContent = "";
+    list.innerHTML = `<span class="muted small">${escapeHtml(RISK_HELP[err.code] || err.message)}</span>`;
+  }
+}
+
+async function acknowledge(id) {
+  try {
+    await api(`/alerts/${id}/acknowledge`, { method: "POST" });
+    loadAlerts();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
 /* ---------------- profile ---------------- */
 async function loadProfile() {
   try {
@@ -690,6 +782,7 @@ async function saveProfile(e) {
     toast("Profile saved. Guidance updated for your condition.");
     loadToday();
     loadExposure();
+    loadRisk();
   } catch (err) {
     toast(err.message, true);
   }

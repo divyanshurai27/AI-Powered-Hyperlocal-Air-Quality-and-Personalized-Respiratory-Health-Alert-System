@@ -125,6 +125,8 @@ class RiskPrediction(UUIDPrimaryKeyMixin, Base):
     confidence: Mapped[str] = mapped_column(String(16), default="normal")  # normal | low
     data_quality: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     features: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    # SHAP explanation computed from this exact row's model and feature vector (BR-09).
+    explanation: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), default=utcnow
     )

@@ -1,5 +1,6 @@
 """Import every model here so Alembic autogenerate sees the full metadata."""
 
+from app.models.alert import Alert
 from app.models.audit import AuditLog
 from app.models.environment import (
     AirQualityObservation,
@@ -14,6 +15,7 @@ from app.models.user import RefreshToken, User
 
 __all__ = [
     "AirQualityObservation",
+    "Alert",
     "AuditLog",
     "HealthRecord",
     "IngestionRun",

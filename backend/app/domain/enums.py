@@ -41,6 +41,17 @@ class RiskLevel(StrEnum):
     SEVERE = "Severe"
 
 
+class AlertState(StrEnum):
+    """PRD §19. `expired` is derived from `expires_at` when an alert is read; `sent` is set
+    by a delivery channel (push notifications arrive with the Android app)."""
+
+    CREATED = "created"
+    SENT = "sent"
+    ACKNOWLEDGED = "acknowledged"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
 class HealthSource(StrEnum):
     MANUAL = "manual"
     HEALTH_CONNECT = "health_connect"

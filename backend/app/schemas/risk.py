@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -17,7 +18,41 @@ class PersonalizationOut(BaseModel):
     observed_days: float
 
 
+class FactorOut(BaseModel):
+    key: str
+    label: str
+    contribution: float = Field(description="Log-odds added to the estimate (signed)")
+    direction: str = Field(description="raises | lowers | neutral")
+    recently_missing: bool = Field(description="No recent data for this factor")
+    features: dict[str, float]
+
+
+class ExplanationOut(BaseModel):
+    version: str
+    method: str
+    space: str = Field(description="calibrated_log_odds: parts add up to risk_probability")
+    model_version: str
+    feature_version: str
+    calibration_version: str
+    input_fingerprint: str
+    base_value: float
+    reconstructed_probability: float | None
+    risk_probability: float
+    summary: list[str] = Field(description="Main contributing factors, plain language")
+    top_factors: list[FactorOut]
+    factors: list[FactorOut]
+    note: str
+
+
+class AlertSummaryOut(BaseModel):
+    id: uuid.UUID
+    state: str
+    risk_level: str
+    message: str
+
+
 class RiskEstimateOut(BaseModel):
+    prediction_id: uuid.UUID | None = None
     horizon_hours: int = Field(description="0 = now; 1..24 = projected at that hour")
     target_window_start: datetime
     target_window_end: datetime
@@ -54,10 +89,16 @@ class RiskHeader(BaseModel):
 
 class RiskCurrentOut(RiskHeader):
     current: RiskEstimateOut
+    explanation: ExplanationOut | None
+    alert_decision: str = Field(description="Why an alert was or was not raised")
+    alert: AlertSummaryOut | None
 
 
 class RiskForecastOut(RiskHeader):
     current: RiskEstimateOut
+    explanation: ExplanationOut | None
+    alert_decision: str
+    alert: AlertSummaryOut | None
     horizons: list[RiskHorizonOut]
     forecast_model_versions: dict[str, str]
     pollutants_skipped: dict[str, str]
@@ -67,9 +108,20 @@ class RiskForecastOut(RiskHeader):
     )
 
 
+class RiskExplanationOut(BaseModel):
+    prediction_id: uuid.UUID
+    prediction_time: datetime
+    horizon_hours: int
+    risk_probability: float
+    risk_level: str
+    explanation: ExplanationOut
+    disclaimer: str = DISCLAIMER
+
+
 class RiskHistoryItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    id: uuid.UUID
     prediction_time: datetime
     horizon_hours: int
     target_window_start: datetime
