@@ -65,7 +65,13 @@ clinical validation. To get a demo account built from one synthetic patient:
 ```powershell
 cd backend
 python -m app.cli seed-demo-patient --email demo@aerogard.in --password <pw> --index 3
+# high-risk demo (alerts): asthma, very severe, a patient the model never trained on
+python -m app.cli seed-demo-patient --email demo2@aerogard.in --password <pw> --index 99 --end 2026-07-01
 ```
+
+In the high-risk demo, open the dashboard at 30 Jun 2026, 11:30 IST: the model reports Severe and
+raises one alert, and the synthetic patient's flare-up begins the next evening (1 Jul, 21:00 IST).
+This is one of the moments the model gets right; it flags only about 12% of flare-ups at High.
 
 Methods, data caveats and results: [`docs/data_and_methods.md`](docs/data_and_methods.md).
 
