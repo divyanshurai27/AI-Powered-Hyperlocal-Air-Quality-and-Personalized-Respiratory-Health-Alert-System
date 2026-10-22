@@ -305,13 +305,13 @@ add_runs(
     "exposure added no measurable discrimination. Exact TreeSHAP explanations, scaled to add up to the probability "
     "shown, and an idempotent alert engine are served through an authenticated, consent-aware API. These are "
     "synthetic-data results, not clinical validation.",
-    size=9, bold=True,
+    size=9,
 )
 kw = doc.add_paragraph()
 kw.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 kw.paragraph_format.space_after = Pt(6)
 add_runs(kw, "Index Terms—", size=9, bold=True, italic=True)
-add_runs(kw, "air quality forecasting, PM2.5, LightGBM, exposure assessment, asthma, COPD, risk prediction, probability calibration, SHAP, synthetic cohort, data leakage", size=9, bold=True)
+add_runs(kw, "air quality forecasting, PM2.5, LightGBM, exposure assessment, asthma, COPD, risk prediction, probability calibration, SHAP, synthetic cohort, data leakage", size=9)
 
 # ============================================================================================
 heading("I. Introduction")
