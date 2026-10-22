@@ -1,16 +1,21 @@
-"""Draw the research-paper diagrams (Fig. 1 pipeline, Fig. 2 architecture) as 300-dpi PNGs
-sized for one IEEE column (3.4 in). Run: python scripts/paper_figures.py"""
+"""Draw the research-paper figures as 300-dpi PNGs sized for one IEEE column (3.4 in):
+Fig. 1 pipeline, Fig. 2 architecture, Fig. 3 risk reliability, Fig. 4 global SHAP importance.
+Run: python scripts/paper_figures.py"""
 
+import json
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-OUT = Path(__file__).resolve().parents[1] / "docs" / "paper"
+REPO = Path(__file__).resolve().parents[1]
+OUT = REPO / "docs" / "paper"
+EXP = REPO / "docs" / "experiments"
 DPI = 300
 W = int(3.4 * DPI)
 FONT = "C:/Windows/Fonts/times.ttf"
 BOLD = "C:/Windows/Fonts/timesbd.ttf"
 INK, MUTED, LINE = (20, 20, 20), (90, 90, 90), (40, 40, 40)
+GRID, MARK = (225, 225, 225), (11, 110, 79)
 FILL, FILL_ALT = (236, 244, 241), (246, 246, 246)
 
 
@@ -66,8 +71,8 @@ def pipeline() -> Path:
         ("Feature engineering", "35 past-only features", False),
         ("24 h AQ forecast", "LightGBM, 24 direct models", False),
         ("Exposure estimate", "ambient × microenvironment", False),
-        ("Respiratory risk*", "asthma / COPD heads", True),
-        ("Calibration & levels*", "Low … Severe policy", True),
+        ("Respiratory risk", "shared trunk + disease heads", False),
+        ("Calibration & SHAP", "Platt · levels · explanations", False),
         ("Alerts & REST API", "FastAPI, JWT, consent", False),
         ("Android app*", "Flutter client", True),
     ]
@@ -97,7 +102,7 @@ def pipeline() -> Path:
         else:
             x = (a[0] + a[2]) / 2
             arrow(d, (x, a[3] + 4), (x, b[1] - 6))
-    note = "* in progress (Phases 4–6). Solid boxes are implemented and evaluated."
+    note = "* in progress (Phase 6). Solid boxes are implemented and evaluated."
     d.text((pad, H - 50), note, font=font(6), fill=MUTED)
     OUT.mkdir(parents=True, exist_ok=True)
     path = OUT / "fig1_pipeline.png"
@@ -117,9 +122,9 @@ def architecture() -> Path:
     layers = [
         ("Clients", "Flutter Android app*  ·  OpenAPI /docs", FILL_ALT),
         ("FastAPI  /api/v1", "JWT auth · ownership checks · consent · error contract", FILL),
-        ("Services", "air · forecast · exposure · ingestion · patients", FILL),
-        ("Domain & ML", "spatial IDW · cleaning · features · LightGBM artifacts", FILL),
-        ("PostgreSQL 16", "observations · weather · stations · patients · audit", FILL),
+        ("Services", "air · forecast · exposure · risk · alerts · patients", FILL),
+        ("Domain & ML", "IDW · features · LightGBM · calibration · SHAP", FILL),
+        ("PostgreSQL 16", "observations · weather · health · risk · alerts · audit", FILL),
     ]
     lh, gap = 160, 62
     ys = []
@@ -157,6 +162,110 @@ def architecture() -> Path:
     return path
 
 
+def _axes(d, box, xmax, ymax, xticks, yticks, fmt, xlabel, ylabel):
+    """Recessive grid and axes; returns a data → pixel mapper."""
+    x0, y0, x1, y1 = box
+
+    def to_px(x, y):
+        return x0 + (x1 - x0) * x / xmax, y1 - (y1 - y0) * y / ymax
+
+    f = font(6.2)
+    for t in yticks:
+        _, py = to_px(0, t)
+        d.line([(x0, py), (x1, py)], fill=GRID, width=2)
+        lab = fmt(t)
+        d.text((x0 - 12 - d.textlength(lab, font=f), py - 20), lab, font=f, fill=MUTED)
+    for t in xticks:
+        px, _ = to_px(t, 0)
+        lab = fmt(t)
+        d.text((px - d.textlength(lab, font=f) / 2, y1 + 10), lab, font=f, fill=MUTED)
+    d.line([(x0, y1), (x1, y1)], fill=LINE, width=3)
+    d.line([(x0, y0), (x0, y1)], fill=LINE, width=3)
+    fl = font(6.6)
+    d.text(((x0 + x1) / 2 - d.textlength(xlabel, font=fl) / 2, y1 + 52), xlabel, font=fl, fill=INK)
+    return to_px, fl, ylabel
+
+
+def reliability() -> Path:
+    """Fig. 3: predicted vs observed 24 h event rate, test (seen patients), 10 quantile bins."""
+    bins = json.loads((EXP / "risk_1.0.0.json").read_text())["reliability_test_seen"]
+    H = 900
+    img = Image.new("RGB", (W, H), "white")
+    d = ImageDraw.Draw(img)
+    box_ = (150, 40, W - 40, H - 150)
+    lim = 0.05
+    ticks = [0, 0.01, 0.02, 0.03, 0.04, 0.05]
+    to_px, fl, ylabel = _axes(
+        d, box_, lim, lim, ticks, ticks, lambda v: f"{100 * v:.0f}%",
+        "Mean predicted risk (calibrated)", "Observed event rate",
+    )
+    # y-axis label, rotated
+    lab = Image.new("RGBA", (int(d.textlength(ylabel, font=fl)) + 10, 60), (255, 255, 255, 0))
+    ImageDraw.Draw(lab).text((0, 0), ylabel, font=fl, fill=INK)
+    lab = lab.rotate(90, expand=True)
+    img.paste(lab, (10, int((box_[1] + box_[3]) / 2 - lab.size[1] / 2)), lab)
+    # perfect-calibration reference: dashed gray diagonal
+    (ax, ay), (bx, by) = to_px(0, 0), to_px(lim, lim)
+    steps = 40
+    for i in range(0, steps, 2):
+        t0, t1 = i / steps, (i + 1) / steps
+        seg = [(ax + (bx - ax) * t, ay + (by - ay) * t) for t in (t0, t1)]
+        d.line(seg, fill=MUTED, width=3)
+    pts = [to_px(b["mean_predicted"], b["observed_rate"]) for b in bins]
+    d.line(pts, fill=MARK, width=6, joint="curve")
+    r = 13
+    for x, y in pts:
+        d.ellipse([x - r, y - r, x + r, y + r], fill=MARK, outline="white", width=4)
+    tx, ty = to_px(0.0335, 0.0285)
+    d.text((tx, ty), "perfect calibration", font=font(6), fill=MUTED)
+    path = OUT / "fig3_reliability.png"
+    img.save(path, dpi=(DPI, DPI))
+    return path
+
+
+def shap_bars() -> Path:
+    """Fig. 4: share of mean |SHAP| per patient-facing factor, test (seen patients)."""
+    factors = json.loads((EXP / "risk_1.0.0_shap.json").read_text(encoding="utf-8"))
+    rows = list(factors["parts"]["test_seen"]["all"]["factors"].values())
+    short = {
+        "Wearable readings (SpO₂, heart rate, steps, sleep)": "Wearable readings",
+        "How regularly you logged your diary": "Diary regularity",
+        "How complete your recent location record is": "Location-record completeness",
+        "Your condition and its severity": "Condition and severity",
+        "Weather (temperature, humidity, rain)": "Weather",
+        "Recent reliever-inhaler use": "Reliever-inhaler use",
+    }
+    exposure = {"Estimated PM2.5 exposure", "Recent change in PM2.5 exposure",
+                "Estimated PM10 exposure", "Estimated ozone exposure",
+                "How complete your recent location record is"}
+    f = font(6.2)
+    labels = [short.get(r["label"], r["label"]) for r in rows]
+    measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    lw = max(measure.textlength(s, font=f) for s in labels)
+    bar_h, gap, top = 34, 14, 30
+    H = int(top + len(rows) * (bar_h + gap) + 110)
+    img = Image.new("RGB", (W, H), "white")
+    d = ImageDraw.Draw(img)
+    x0 = int(lw) + 40
+    x1 = W - 120
+    vmax = max(r["share"] for r in rows)
+    for i, (r, lab) in enumerate(zip(rows, labels, strict=True)):
+        y = top + i * (bar_h + gap)
+        d.text((x0 - 16 - d.textlength(lab, font=f), y + 2), lab, font=f, fill=INK)
+        w = (x1 - x0) * r["share"] / vmax
+        fill = MARK if r["label"] not in exposure else (150, 190, 175)
+        d.rounded_rectangle([x0, y, x0 + max(w, 6), y + bar_h], radius=8, fill=fill)
+        d.rectangle([x0, y, x0 + min(8, w), y + bar_h], fill=fill)  # square at the baseline
+        d.text((x0 + w + 10, y + 2), f"{100 * r['share']:.1f}%", font=f, fill=MUTED)
+    d.line([(x0, top - 8), (x0, top + len(rows) * (bar_h + gap) - gap + 8)], fill=LINE, width=3)
+    ly = H - 70
+    d.rounded_rectangle([x0, ly, x0 + 34, ly + 26], radius=6, fill=(150, 190, 175))
+    d.text((x0 + 46, ly - 4), "exposure factors (lighter)", font=font(6), fill=MUTED)
+    path = OUT / "fig4_shap.png"
+    img.save(path, dpi=(DPI, DPI))
+    return path
+
+
 if __name__ == "__main__":
-    for p in (pipeline(), architecture()):
+    for p in (pipeline(), architecture(), reliability(), shap_bars()):
         print(p)
