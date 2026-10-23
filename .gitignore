@@ -32,3 +32,11 @@ flutter_app/android/local.properties
 Thumbs.db
 .idea/
 .vscode/
+
+# Launch video: keep the deliverables and build scripts, never the captured
+# login token, API responses or render cache in work/
+brag-output/work/*
+!brag-output/work/video.html
+!brag-output/work/capture.js
+!brag-output/work/music.py
+!brag-output/work/styles.css

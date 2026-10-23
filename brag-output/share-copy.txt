@@ -1,0 +1,1 @@
+The air index said Moderate. For a very severe asthmatic, AeroGard said High, and showed exactly why. Hyperlocal air-quality estimates for Bengaluru, a personal 24-hour respiratory-risk score with factor-by-factor explanations, and one alert when it counts. (Research prototype; risk model trained on a synthetic cohort, not medical advice.)

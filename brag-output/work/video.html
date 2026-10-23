@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="styles.css">
+<style>
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; }
+  body { background: #0c1a15; }
+  #stage { position: absolute; inset: 0; overflow: hidden;
+    background: radial-gradient(1400px 800px at 25% 10%, #123328 0%, #0c1a15 60%, #08120e 100%); }
+  .glow { position: absolute; width: 1200px; height: 1200px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(11,110,79,.35), transparent 65%); filter: blur(10px); }
+  .scene { position: absolute; inset: 0; opacity: 0; }
+  .center { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .eyebrow { color: #8fb8a8; font-size: 34px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+  .white { color: #f2f7f4; }
+  .big { font-size: 300px; font-weight: 700; letter-spacing: -.04em; line-height: .95; color: #f2f7f4; font-variant-numeric: tabular-nums; }
+  .vunit { font-size: 52px; color: #9fbfb2; font-weight: 500; margin-top: 4px; }
+  .line { font-size: 76px; font-weight: 650; letter-spacing: -.015em; color: #f2f7f4; line-height: 1.12; }
+  .line em { font-style: normal; color: #ff9d2e; }
+  .sub { font-size: 46px; color: #b8d3c8; font-weight: 450; line-height: 1.3; }
+  .vpill { display: inline-block; font-size: 58px; font-weight: 700; color: #fff; padding: 14px 44px; border-radius: 999px; position: relative; }
+  .strike { position: absolute; left: -6%; top: 50%; height: 8px; background: #f2f7f4; border-radius: 4px; }
+  .caption { position: absolute; left: 130px; top: 50%; width: 600px; transform: translateY(-50%); }
+  .caption .line { font-size: 74px; }
+  .caption .sub { margin-top: 26px; font-size: 38px; }
+  .cardwrap { position: absolute; right: 110px; top: 50%; width: 620px; transform-origin: right center; }
+  .card { box-shadow: 0 30px 80px rgba(0,0,0,.45), 0 4px 16px rgba(0,0,0,.25); }
+  .brandbig { display: flex; align-items: center; gap: 34px; font-size: 150px; font-weight: 700; color: #f2f7f4; letter-spacing: -.02em; }
+  .brandbig .logo { width: 150px; height: 150px; }
+  .brandbig .logo::after { left: 35px; right: 35px; top: 64px; height: 46px; border-width: 14px; border-radius: 60px 60px 0 0; }
+  .cursor { position: absolute; width: 44px; height: 44px; z-index: 50; pointer-events: none; }
+  .ring { position: absolute; width: 80px; height: 80px; border-radius: 50%; border: 4px solid #0b6e4f; z-index: 49; }
+  .fine { font-size: 28px; color: #7fa596; margin-top: 46px; letter-spacing: .02em; }
+  .alert-item .btn { font-size: 13px; }
+  .toastbar { display: flex; align-items: center; gap: 14px; background: #16211d; color: #fff; padding: 14px 18px; border-radius: 14px; font-size: 15px; margin-bottom: 14px; box-shadow: 0 20px 60px rgba(0,0,0,.45); }
+  .toastbar .logo { width: 30px; height: 30px; }
+  .toastbar .t { font-size: 12px; color: #9fbfb2; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="glow" id="glow"></div>
+
+  <!-- 1 hook -->
+  <section class="scene center" id="s1">
+    <div class="eyebrow" id="s1e">29 June · 11:30 IST · Bengaluru</div>
+    <div class="big" id="s1n" style="margin-top:30px">0</div>
+    <div class="vunit" id="s1u">µg/m³ PM<sub>10</sub> outside</div>
+    <div style="margin-top:56px"><span class="vpill" id="s1p" style="background:#f2c200;color:#3a2d00">Moderate<span class="strike" id="s1x"></span></span></div>
+    <div class="sub" id="s1c" style="margin-top:44px">The air index says: Moderate.</div>
+  </section>
+
+  <!-- 2 turn -->
+  <section class="scene center" id="s2">
+    <div style="display:flex;gap:40px;align-items:center">
+      <span class="vpill" id="s2a" style="background:#f2c200;color:#3a2d00">Moderate<span class="strike" id="s2x"></span></span>
+      <span class="vpill rlevel High" id="s2b" style="font-size:96px;padding:22px 70px">High</span>
+    </div>
+    <div class="line" id="s2l" style="margin-top:80px">For a very severe asthmatic,<br>it’s a <em>High-risk</em> day.</div>
+  </section>
+
+  <!-- 3 reveal -->
+  <section class="scene center" id="s3">
+    <div class="brandbig" id="s3b"><span class="logo" id="s3logo"></span><span id="s3w">AeroGard</span></div>
+    <div class="sub" id="s3s" style="margin-top:50px;font-size:52px">Hyperlocal air + personal risk alerts<br>for asthma &amp; COPD.</div>
+  </section>
+
+  <!-- 4 hyperlocal -->
+  <section class="scene" id="s4">
+    <div class="caption" id="s4c"><div class="line">Air estimated for your exact spot.</div>
+      <div class="sub">Blended from nearby CPCB/KSPCB reference monitors.</div></div>
+    <div class="cardwrap" id="s4w">
+      <section class="card hero">
+        <div class="card-head"><h2>Air quality now</h2><span class="muted">Home</span></div>
+        <div class="hero-body">
+          <div class="hero-value"><span class="num" id="s4n">105</span><span class="unit">µg/m³ PM<sub>10</sub></span></div>
+          <div class="hero-band"><span class="band" id="s4band" style="background:var(--moderate)">Moderate</span>
+            <span class="muted small">nearest station 7.3 km · data 30 min old</span></div>
+        </div>
+        <div class="pollutants" id="chips">
+          <div class="pchip"><div class="name">PM<sub>2.5</sub></div><div class="val"><small>unavailable</small></div><div class="note">No fresh reading nearby</div></div>
+          <div class="pchip"><span class="dot" style="background:var(--moderate)"></span><div class="name">PM<sub>10</sub></div><div class="val">105.0 <small>µg/m³</small></div><div class="note">Moderate</div></div>
+          <div class="pchip"><div class="name">NO<sub>2</sub></div><div class="val">45.9 <small>µg/m³</small></div><div class="note">units unverified</div></div>
+          <div class="pchip"><div class="name">O<sub>3</sub></div><div class="val"><small>unavailable</small></div><div class="note">No fresh reading nearby</div></div>
+          <div class="pchip"><div class="name">SO<sub>2</sub></div><div class="val">21.6 <small>µg/m³</small></div><div class="note">units unverified</div></div>
+          <div class="pchip"><span class="dot" style="background:var(--satisfactory)"></span><div class="name">CO</div><div class="val">1.28 <small>mg/m³</small></div><div class="note">Satisfactory</div></div>
+        </div>
+        <p class="fineprint">Estimated from nearby CPCB/KSPCB reference monitors, not a measurement at this spot.</p>
+      </section>
+    </div>
+  </section>
+
+  <!-- 5 risk -->
+  <section class="scene" id="s5">
+    <div class="caption" id="s5c"><div class="line">Your 24-hour risk. And why.</div>
+      <div class="sub">Calibrated per person, explained factor by factor.</div></div>
+    <div class="cardwrap" id="s5w">
+      <section class="card risk-card">
+        <div class="card-head"><h2>Personal respiratory risk</h2><span class="pill">Next 24 h</span></div>
+        <div class="risk-body">
+          <div class="risk-top">
+            <span class="rlevel High" id="s5lvl">High</span>
+            <span class="risk-pct"><span id="s5pct">0.0</span>%<small>estimated chance of a flare-up starting in the next 24 h</small></span>
+          </div>
+          <div><div class="small muted" style="margin-bottom:6px">Main contributing factors</div>
+            <div class="factors" id="factors"></div></div>
+        </div>
+      </section>
+    </div>
+  </section>
+
+  <!-- 6 alert -->
+  <section class="scene" id="s6">
+    <div class="caption" id="s6c"><div class="line">One alert, when it counts.</div>
+      <div class="sub">Raised once at High, not every hour.</div></div>
+    <div class="cardwrap" id="s6w">
+      <div class="toastbar" id="s6t"><span class="logo"></span><div><b>AeroGard</b><div class="t">Respiratory risk alert</div></div></div>
+      <section class="card risk-card" id="s6card">
+        <div class="alerts-head" style="margin-top:0;border-top:0;padding-top:0"><h3>Alerts</h3><span class="muted small" id="s6count">1 awaiting acknowledgement</span></div>
+        <div class="alerts-list">
+          <div class="alert-item open" id="s6item"><div>Your estimated respiratory risk for the next 24 hours is High (5.1%).
+            <div class="when">29 Jun, 05:00 am IST · until 30 Jun, 05:00 am</div></div>
+            <span id="s6act" style="display:inline-block;min-width:118px;text-align:right"><button class="btn ghost small-btn" id="s6btn">Acknowledge</button></span></div>
+        </div>
+      </section>
+    </div>
+    <div class="ring" id="ring"></div>
+    <svg class="cursor" id="cursor" viewBox="0 0 24 24"><path d="M4 2l15 9-6.5 1.6L16 20l-3 1.5-3.4-7.3L4 19z" fill="#fff" stroke="#16211d" stroke-width="1.4" stroke-linejoin="round"/></svg>
+  </section>
+
+  <!-- 7 outro -->
+  <section class="scene center" id="s7">
+    <div class="brandbig" id="s7b"><span class="logo"></span>AeroGard</div>
+    <div class="line" id="s7l" style="margin-top:44px;font-size:72px">Forecast the air. <span style="color:#5fd3a4">Warn the person.</span></div>
+    <div class="fine" id="s7f">Research prototype · risk model trained on a synthetic cohort · not medical advice</div>
+  </section>
+</div>
+
+<script>
+const FACTORS = [
+  ["Recent symptom scores", 0.857927, false],
+  ["Recent flare-ups", 0.353097, false],
+  ["Your own flare-up history (personalisation)", 0.135381, false],
+  ["Wearable readings (SpO₂, heart rate, steps, sleep)", 0.117332, true],
+  ["Estimated PM10 exposure", 0.116632, false],
+];
+document.getElementById("factors").innerHTML = FACTORS.map(([l, c, m], i) =>
+  `<div class="factor"><div>${l}${m ? ' <span class="tag">(not recorded recently)</span>' : ""}
+   <div class="track"><div class="fill up" id="f${i}" style="width:0%"></div></div></div><span class="tag">raised it</span></div>`).join("");
+
+const $ = (id) => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const eo = (x) => 1 - Math.pow(1 - x, 3);
+const eio = (x) => (x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const back = (x) => { const c = 1.70158, d = c + 1; return 1 + d * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+const lerp = (a, b, x) => a + (b - a) * x;
+function show(el, p, dy = 30, sc = 1) { // p: 0..1 appear progress
+  el.style.opacity = p; el.style.transform = `translateY(${(1 - p) * dy}px) scale(${lerp(sc, 1, p)})`;
+}
+// scene envelope: fade in over [a, a+i], out over [b-o, b]
+function env(t, a, b, i = .3, o = .25) { return Math.min(seg(t, a, a + i), 1 - seg(t, b - o, b)); }
+
+const SC = [["s1", 0, 3], ["s2", 3, 6], ["s3", 6, 9], ["s4", 9, 12], ["s5", 12, 16], ["s6", 16, 18.5], ["s7", 18.5, 21.2]];
+
+window.render = function (t) {
+  for (const [id, a, b] of SC) {
+    const e = (t >= a - .01 && t < b) ? (id === "s1" ? 1 - seg(t, b - .25, b) : env(t, a, b, .25, id === "s7" ? .4 : .25)) : 0;
+    $(id).style.opacity = e;
+    $(id).style.visibility = e > 0 ? "visible" : "hidden";
+  }
+  // background glow drifts slowly
+  $("glow").style.transform = `translate(${lerp(-300, 900, t / 21)}px, ${-200 + 120 * Math.sin(t * .4)}px)`;
+
+  // 1 hook
+  show($("s1e"), eo(seg(t, .05, .45)), 20);
+  const n = eo(seg(t, .15, 1.0));
+  $("s1n").textContent = Math.round(105 * n);
+  $("s1n").style.transform = `scale(${lerp(.9, 1, n)})`;
+  show($("s1u"), eo(seg(t, .5, .9)), 20);
+  show($("s1p"), back(seg(t, 1.0, 1.35)), 0, .6);
+  show($("s1c"), eo(seg(t, 1.25, 1.6)), 24);
+  $("s1x").style.width = "0";
+  // 2 turn
+  show($("s2a"), 1, 0);
+  $("s2a").style.opacity = lerp(1, .45, eo(seg(t, 3.3, 3.6)));
+  $("s2x").style.width = `${112 * eo(seg(t, 3.25, 3.5))}%`;
+  show($("s2b"), back(seg(t, 3.5, 3.85)), 0, .4);
+  show($("s2l"), eo(seg(t, 3.75, 4.15)), 36);
+  // 3 reveal
+  const r = back(seg(t, 6.0, 6.45));
+  $("s3logo").style.transform = `scale(${r}) rotate(${(1 - r) * -90}deg)`;
+  show($("s3w"), eo(seg(t, 6.15, 6.5)), 0);
+  $("s3w").style.transform = `translateX(${(1 - eo(seg(t, 6.15, 6.5))) * -40}px)`;
+  show($("s3s"), eo(seg(t, 6.5, 6.9)), 30);
+  // 4 hyperlocal
+  show($("s4c"), eo(seg(t, 9.0, 9.4)), 30);
+  $("s4c").style.transform += " translateY(-50%)";
+  const w4 = eo(seg(t, 9.1, 9.55));
+  $("s4w").style.opacity = w4;
+  $("s4w").style.transform = `translateY(-50%) translateX(${(1 - w4) * 120}px) scale(1.5)`;
+  $("s4n").textContent = Math.round(105 * eo(seg(t, 9.3, 10.0)));
+  [...$("chips").children].forEach((c, i) => show(c, back(seg(t, 9.9 + i * .25, 10.2 + i * .25)), 14, .8));
+  // 5 risk
+  show($("s5c"), eo(seg(t, 12.0, 12.4)), 30);
+  $("s5c").style.transform += " translateY(-50%)";
+  const w5 = eo(seg(t, 12.1, 12.55));
+  $("s5w").style.opacity = w5;
+  $("s5w").style.transform = `translateY(-50%) translateX(${(1 - w5) * 120}px) scale(1.5)`;
+  show($("s5lvl"), back(seg(t, 12.5, 12.8)), 0, .5);
+  $("s5pct").textContent = (5.6 * eo(seg(t, 12.5, 13.4))).toFixed(1);
+  FACTORS.forEach(([, c], i) => { $("f" + i).style.width = `${(50 * c / 0.857927) * eo(seg(t, 13.0 + i * .25, 13.6 + i * .25))}%`; });
+  // 6 alert
+  show($("s6c"), eo(seg(t, 16.0, 16.4)), 30);
+  $("s6c").style.transform += " translateY(-50%)";
+  const w6 = eo(seg(t, 16.0, 16.4));
+  $("s6w").style.opacity = w6;
+  $("s6w").style.transform = `translateY(-50%) scale(1.5)`;
+  const tb = back(seg(t, 16.0, 16.35));
+  $("s6t").style.opacity = clamp(tb); $("s6t").style.transform = `translateY(${(1 - tb) * -60}px)`;
+  show($("s6card"), eo(seg(t, 16.2, 16.55)), 30);
+  // cursor path to the button, click at 17.5
+  const btn = $("s6act").getBoundingClientRect();
+  const bx = btn.left + btn.width * .5, by = btn.top + btn.height * .6;
+  const cp = eio(seg(t, 16.5, 17.4));
+  const away = eio(seg(t, 17.7, 18.2));
+  const cx = lerp(1100, bx, cp) + 70 * away, cy = lerp(1000, by, cp) + 90 * away;
+  const press = t >= 17.5 && t < 17.62 ? .85 : 1;
+  $("cursor").style.opacity = seg(t, 16.45, 16.6) * (1 - seg(t, 18.0, 18.25));
+  $("cursor").style.transform = `translate(${cx - 6}px, ${cy - 4}px) scale(${press})`;
+  const rp = seg(t, 17.5, 17.95);
+  $("ring").style.opacity = rp > 0 && rp < 1 ? (1 - rp) * .9 : 0;
+  $("ring").style.transform = `translate(${bx - 40}px, ${by - 40}px) scale(${lerp(.3, 1.4, eo(rp))})`;
+  const acked = t >= 17.5;
+  $("s6act").innerHTML = acked ? '<span class="state" style="color:#0b6e4f">✓ acknowledged</span>' : '<button class="btn ghost small-btn" id="s6btn">Acknowledge</button>';
+  if (!acked) $("s6btn").style.background = t > 17.3 ? "#e5f2ec" : "transparent";
+  $("s6item").classList.toggle("open", !acked);
+  $("s6count").textContent = acked ? "0 awaiting acknowledgement" : "1 awaiting acknowledgement";
+  // 7 outro
+  const o = back(seg(t, 18.5, 18.95));
+  $("s7b").style.opacity = clamp(o * 1.2); $("s7b").style.transform = `scale(${lerp(.85, 1, o)})`;
+  show($("s7l"), eo(seg(t, 18.85, 19.25)), 30);
+  show($("s7f"), eo(seg(t, 19.2, 19.6)), 16);
+};
+window.ready = document.fonts.ready.then(() => { render(0); return true; });
+</script>
+</body>
+</html>
